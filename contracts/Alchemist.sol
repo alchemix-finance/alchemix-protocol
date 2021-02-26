@@ -518,7 +518,7 @@ contract Alchemist is  ReentrancyGuard {
   /// @dev Repays debt with the native and or synthetic token.
   ///
   /// An approval is required to transfer native tokens to the transmuter.
-  function repay(uint256 _parentAmount, uint256 _childAmount) external noContractAllowed() onLinkCheck nonReentrant expectInitialized {
+  function repay(uint256 _parentAmount, uint256 _childAmount) external noContractAllowed() nonReentrant onLinkCheck expectInitialized {
 
     CDP.Data storage _cdp = _cdps[msg.sender];
     _cdp.update(_ctx);
@@ -543,7 +543,7 @@ contract Alchemist is  ReentrancyGuard {
   /// @dev Attempts to liquidate part of a CDP's collateral to pay back its debt.
   ///
   /// @param _amount the amount of collateral to attempt to liquidate.
-  function liquidate(uint256 _amount) external noContractAllowed() onLinkCheck nonReentrant expectInitialized returns (uint256, uint256) {
+  function liquidate(uint256 _amount) external noContractAllowed() nonReentrant onLinkCheck expectInitialized returns (uint256, uint256) {
     CDP.Data storage _cdp = _cdps[msg.sender];
     _cdp.update(_ctx);
     
@@ -569,7 +569,7 @@ contract Alchemist is  ReentrancyGuard {
   /// This function reverts if the debt is increased and the CDP health check fails.
   ///
   /// @param _amount the amount of alchemic tokens to borrow.
-  function mint(uint256 _amount) external noContractAllowed() onLinkCheck nonReentrant expectInitialized {
+  function mint(uint256 _amount) external noContractAllowed() nonReentrant onLinkCheck expectInitialized {
 
     CDP.Data storage _cdp = _cdps[msg.sender];
     _cdp.update(_ctx);
