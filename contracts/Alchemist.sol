@@ -471,7 +471,7 @@ contract Alchemist is  ReentrancyGuard {
   /// additional funds.
   ///
   /// @param _amount the amount of collateral to deposit.
-  function deposit(uint256 _amount) external noContractAllowed() nonReentrant expectInitialized {
+  function deposit(uint256 _amount) external nonReentrant noContractAllowed expectInitialized {
 
     require(!emergencyExit, "emergency pause enabled");
     
@@ -496,7 +496,7 @@ contract Alchemist is  ReentrancyGuard {
   /// on other internal or external systems.
   ///
   /// @param _amount the amount of collateral to withdraw.
-  function withdraw(uint256 _amount) external noContractAllowed() nonReentrant expectInitialized returns (uint256, uint256) {
+  function withdraw(uint256 _amount) external nonReentrant noContractAllowed expectInitialized returns (uint256, uint256) {
 
     CDP.Data storage _cdp = _cdps[msg.sender];
     require(block.number > _cdp.lastDeposit, "");
@@ -518,7 +518,7 @@ contract Alchemist is  ReentrancyGuard {
   /// @dev Repays debt with the native and or synthetic token.
   ///
   /// An approval is required to transfer native tokens to the transmuter.
-  function repay(uint256 _parentAmount, uint256 _childAmount) external noContractAllowed() nonReentrant onLinkCheck expectInitialized {
+  function repay(uint256 _parentAmount, uint256 _childAmount) external nonReentrant noContractAllowed onLinkCheck expectInitialized {
 
     CDP.Data storage _cdp = _cdps[msg.sender];
     _cdp.update(_ctx);
@@ -543,7 +543,7 @@ contract Alchemist is  ReentrancyGuard {
   /// @dev Attempts to liquidate part of a CDP's collateral to pay back its debt.
   ///
   /// @param _amount the amount of collateral to attempt to liquidate.
-  function liquidate(uint256 _amount) external noContractAllowed() nonReentrant onLinkCheck expectInitialized returns (uint256, uint256) {
+  function liquidate(uint256 _amount) external nonReentrant noContractAllowed onLinkCheck expectInitialized returns (uint256, uint256) {
     CDP.Data storage _cdp = _cdps[msg.sender];
     _cdp.update(_ctx);
     
@@ -569,7 +569,7 @@ contract Alchemist is  ReentrancyGuard {
   /// This function reverts if the debt is increased and the CDP health check fails.
   ///
   /// @param _amount the amount of alchemic tokens to borrow.
-  function mint(uint256 _amount) external noContractAllowed() nonReentrant onLinkCheck expectInitialized {
+  function mint(uint256 _amount) external nonReentrant noContractAllowed onLinkCheck expectInitialized {
 
     CDP.Data storage _cdp = _cdps[msg.sender];
     _cdp.update(_ctx);
@@ -681,9 +681,9 @@ contract Alchemist is  ReentrancyGuard {
   ///
   /// This is used to prevent contracts from interacting.
   modifier noContractAllowed() {
-            require(!address(msg.sender).isContract() && msg.sender == tx.origin, "Sorry we do not accept contract!");
-        _;
-    }
+    require(!address(msg.sender).isContract() && msg.sender == tx.origin, "Sorry we do not accept contract!");
+    _;
+  }
   /// @dev Checks that the contract is in an initialized state.
   ///
   /// This is used over a modifier to reduce the size of the contract
