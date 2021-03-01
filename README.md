@@ -1,3 +1,7 @@
+# Alchemix
+
+## Contracts for the Alchemix protocol
+
 # Bug Bounty README
 
 ## Overview
