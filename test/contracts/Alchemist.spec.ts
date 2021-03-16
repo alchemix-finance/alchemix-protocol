@@ -740,7 +740,6 @@ describe("Alchemist", () => {
         const alchemistTokenBalPre = await token.balanceOf(alchemist.address);
         await alchemist.connect(minter).liquidate(liqAmt);
         const alchemistTokenBalPost = await token.balanceOf(alchemist.address);
-        console.log("pre", alchemistTokenBalPre.toString(), alchemistTokenBalPost.toString())
         const transmuterEndingTokenBal = await token.balanceOf(transmuterContract.address);
         expect(alchemistTokenBalPost).equal(0);
         expect(transmuterEndingTokenBal).equal(liqAmt);
