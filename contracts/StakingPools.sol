@@ -36,7 +36,7 @@ import "hardhat/console.sol";
 /// This contract was inspired by Chef Nomi's 'MasterChef' contract which can be found in this
 /// repository: https://github.com/sushiswap/sushiswap.
 contract StakingPools is ReentrancyGuard {
-  using FixedPointMath for FixedPointMath.uq192x64;
+  using FixedPointMath for FixedPointMath.FixedDecimal;
   using Pool for Pool.Data;
   using Pool for Pool.List;
   using SafeERC20 for IERC20;
@@ -170,7 +170,7 @@ contract StakingPools is ReentrancyGuard {
       token: _token,
       totalDeposited: 0,
       rewardWeight: 0,
-      accumulatedRewardWeight: FixedPointMath.uq192x64(0),
+      accumulatedRewardWeight: FixedPointMath.FixedDecimal(0),
       lastUpdatedBlock: block.number
     }));
 

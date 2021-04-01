@@ -16,7 +16,7 @@ import "hardhat/console.sol";
 ///
 /// @dev A library which provides the Stake data struct and associated functions.
 library Stake {
-  using FixedPointMath for FixedPointMath.uq192x64;
+  using FixedPointMath for FixedPointMath.FixedDecimal;
   using Pool for Pool.Data;
   using SafeMath for uint256;
   using Stake for Stake.Data;
@@ -24,7 +24,7 @@ library Stake {
   struct Data {
     uint256 totalDeposited;
     uint256 totalUnclaimed;
-    FixedPointMath.uq192x64 lastAccumulatedWeight;
+    FixedPointMath.FixedDecimal lastAccumulatedWeight;
   }
 
   function update(Data storage _self, Pool.Data storage _pool, Pool.Context storage _ctx) internal {
@@ -36,8 +36,8 @@ library Stake {
     internal view
     returns (uint256)
   {
-    FixedPointMath.uq192x64 memory _currentAccumulatedWeight = _pool.getUpdatedAccumulatedRewardWeight(_ctx);
-    FixedPointMath.uq192x64 memory _lastAccumulatedWeight = _self.lastAccumulatedWeight;
+    FixedPointMath.FixedDecimal memory _currentAccumulatedWeight = _pool.getUpdatedAccumulatedRewardWeight(_ctx);
+    FixedPointMath.FixedDecimal memory _lastAccumulatedWeight = _self.lastAccumulatedWeight;
 
     if (_currentAccumulatedWeight.cmp(_lastAccumulatedWeight) == 0) {
       return _self.totalUnclaimed;

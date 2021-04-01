@@ -1,56 +1,56 @@
-//SPDX-License-Identifier: GPL-3.0
+//SPDX-License-Identifier: Unlicense
 pragma solidity ^0.6.12;
 
 library FixedPointMath {
   uint256 public constant DECIMALS = 18;
   uint256 public constant SCALAR = 10**DECIMALS;
 
-  struct uq192x64 {
+  struct FixedDecimal {
     uint256 x;
   }
 
-  function fromU256(uint256 value) internal pure returns (uq192x64 memory) {
+  function fromU256(uint256 value) internal pure returns (FixedDecimal memory) {
     uint256 x;
     require(value == 0 || (x = value * SCALAR) / SCALAR == value);
-    return uq192x64(x);
+    return FixedDecimal(x);
   }
 
-  function maximumValue() internal pure returns (uq192x64 memory) {
-    return uq192x64(uint256(-1));
+  function maximumValue() internal pure returns (FixedDecimal memory) {
+    return FixedDecimal(uint256(-1));
   }
 
-  function add(uq192x64 memory self, uq192x64 memory value) internal pure returns (uq192x64 memory) {
+  function add(FixedDecimal memory self, FixedDecimal memory value) internal pure returns (FixedDecimal memory) {
     uint256 x;
     require((x = self.x + value.x) >= self.x);
-    return uq192x64(x);
+    return FixedDecimal(x);
   }
 
-  function add(uq192x64 memory self, uint256 value) internal pure returns (uq192x64 memory) {
+  function add(FixedDecimal memory self, uint256 value) internal pure returns (FixedDecimal memory) {
     return add(self, fromU256(value));
   }
 
-  function sub(uq192x64 memory self, uq192x64 memory value) internal pure returns (uq192x64 memory) {
+  function sub(FixedDecimal memory self, FixedDecimal memory value) internal pure returns (FixedDecimal memory) {
     uint256 x;
     require((x = self.x - value.x) <= self.x);
-    return uq192x64(x);
+    return FixedDecimal(x);
   }
 
-  function sub(uq192x64 memory self, uint256 value) internal pure returns (uq192x64 memory) {
+  function sub(FixedDecimal memory self, uint256 value) internal pure returns (FixedDecimal memory) {
     return sub(self, fromU256(value));
   }
 
-  function mul(uq192x64 memory self, uint256 value) internal pure returns (uq192x64 memory) {
+  function mul(FixedDecimal memory self, uint256 value) internal pure returns (FixedDecimal memory) {
     uint256 x;
     require(value == 0 || (x = self.x * value) / value == self.x);
-    return uq192x64(x);
+    return FixedDecimal(x);
   }
 
-  function div(uq192x64 memory self, uint256 value) internal pure returns (uq192x64 memory) {
+  function div(FixedDecimal memory self, uint256 value) internal pure returns (FixedDecimal memory) {
     require(value != 0);
-    return uq192x64(self.x / value);
+    return FixedDecimal(self.x / value);
   }
 
-  function cmp(uq192x64 memory self, uq192x64 memory value) internal pure returns (int256) {
+  function cmp(FixedDecimal memory self, FixedDecimal memory value) internal pure returns (int256) {
     if (self.x < value.x) {
       return -1;
     }
@@ -62,7 +62,7 @@ library FixedPointMath {
     return 0;
   }
 
-  function decode(uq192x64 memory self) internal pure returns (uint256) {
+  function decode(FixedDecimal memory self) internal pure returns (uint256) {
     return self.x / SCALAR;
   }
 }

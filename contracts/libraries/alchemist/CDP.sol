@@ -14,13 +14,13 @@ import "hardhat/console.sol";
 /// @dev A library which provides the CDP data struct and associated functions.
 library CDP {
   using CDP for Data;
-  using FixedPointMath for FixedPointMath.uq192x64;
+  using FixedPointMath for FixedPointMath.FixedDecimal;
   using SafeERC20 for IDetailedERC20;
   using SafeMath for uint256;
 
   struct Context {
-    FixedPointMath.uq192x64 collateralizationLimit;
-    FixedPointMath.uq192x64 accumulatedYieldWeight;
+    FixedPointMath.FixedDecimal collateralizationLimit;
+    FixedPointMath.FixedDecimal accumulatedYieldWeight;
   }
 
   struct Data {
@@ -28,7 +28,7 @@ library CDP {
     uint256 totalDebt;
     uint256 totalCredit;
     uint256 lastDeposit;
-    FixedPointMath.uq192x64 lastAccumulatedYieldWeight;
+    FixedPointMath.FixedDecimal lastAccumulatedYieldWeight;
   }
 
   function update(Data storage _self, Context storage _ctx) internal {
@@ -94,8 +94,8 @@ library CDP {
   ///
   /// @return the amount of earned yield.
   function getEarnedYield(Data storage _self, Context storage _ctx) internal view returns (uint256) {
-    FixedPointMath.uq192x64 memory _currentAccumulatedYieldWeight = _ctx.accumulatedYieldWeight;
-    FixedPointMath.uq192x64 memory _lastAccumulatedYieldWeight = _self.lastAccumulatedYieldWeight;
+    FixedPointMath.FixedDecimal memory _currentAccumulatedYieldWeight = _ctx.accumulatedYieldWeight;
+    FixedPointMath.FixedDecimal memory _lastAccumulatedYieldWeight = _self.lastAccumulatedYieldWeight;
 
     if (_currentAccumulatedYieldWeight.cmp(_lastAccumulatedYieldWeight) == 0) {
       return 0;
@@ -119,7 +119,7 @@ library CDP {
   /// @return a fixed point integer representing the collateralization ratio.
   function getCollateralizationRatio(Data storage _self, Context storage _ctx)
     internal view
-    returns (FixedPointMath.uq192x64 memory)
+    returns (FixedPointMath.FixedDecimal memory)
   {
     uint256 _totalDebt = _self.getUpdatedTotalDebt(_ctx);
     if (_totalDebt == 0) {
