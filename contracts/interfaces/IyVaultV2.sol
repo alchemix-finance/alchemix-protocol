@@ -1,6 +1,8 @@
 pragma solidity ^0.6.12;
 
-interface IyVaultV2 {
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+
+interface IyVaultV2 is IERC20 {
     function token() external view returns (address);
     function deposit() external returns (uint);
     function deposit(uint) external returns (uint);
@@ -25,8 +27,8 @@ interface IyVaultV2 {
     function name() external view returns (string memory);
     function symbol() external view returns (string memory);
     function decimals() external view returns (uint);
-    function balanceOf(address owner) external view returns (uint);
-    function totalSupply() external view returns (uint);
+    function balanceOf(address owner) external view override returns (uint);
+    function totalSupply() external view override returns (uint);
     function governance() external view returns (address);
     function management() external view returns (address);
     function guardian() external view returns (address);

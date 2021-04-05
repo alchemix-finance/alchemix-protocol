@@ -16,7 +16,7 @@ import {IyVaultV2} from "../interfaces/IyVaultV2.sol";
 ///
 /// @dev A vault adapter implementation which wraps a yEarn vault.
 contract YearnVaultAdapter is IVaultAdapter {
-  using FixedPointMath for FixedPointMath.uq192x64;
+  using FixedPointMath for FixedPointMath.FixedDecimal;
   using SafeERC20 for IDetailedERC20;
   using SafeMath for uint256;
 

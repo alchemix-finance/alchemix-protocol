@@ -34,7 +34,7 @@ import "hardhat/console.sol";
                                                                                               
 contract Alchemist is  ReentrancyGuard {
   using CDP for CDP.Data;
-  using FixedPointMath for FixedPointMath.uq192x64;
+  using FixedPointMath for FixedPointMath.FixedDecimal;
   using Vault for Vault.Data;
   using Vault for Vault.List;
   using SafeERC20 for IMintableERC20;
@@ -52,7 +52,7 @@ contract Alchemist is  ReentrancyGuard {
   ///
   /// This value is equal to 100%.
   ///
-  /// IMPORTANT: This constant is a raw FixedPointMath.uq192x64 value and assumes a resolution of 64 bits. If the
+  /// IMPORTANT: This constant is a raw FixedPointMath.FixedDecimal value and assumes a resolution of 64 bits. If the
   ///            resolution for the FixedPointMath library changes this constant must change as well.
   uint256 public constant MINIMUM_COLLATERALIZATION_LIMIT = 1000000000000000000;
 
@@ -61,7 +61,7 @@ contract Alchemist is  ReentrancyGuard {
   ///
   /// This value is equal to 400%.
   ///
-  /// IMPORTANT: This constant is a raw FixedPointMath.uq192x64 value and assumes a resolution of 64 bits. If the
+  /// IMPORTANT: This constant is a raw FixedPointMath.FixedDecimal value and assumes a resolution of 64 bits. If the
   ///            resolution for the FixedPointMath library changes this constant must change as well.
   uint256 public constant MAXIMUM_COLLATERALIZATION_LIMIT = 4000000000000000000;
 
@@ -218,8 +218,8 @@ contract Alchemist is  ReentrancyGuard {
 
     //_setupDecimals(_token.decimals());
     uint256 COLL_LIMIT = MINIMUM_COLLATERALIZATION_LIMIT.mul(2);
-    _ctx.collateralizationLimit = FixedPointMath.uq192x64(COLL_LIMIT);
-    _ctx.accumulatedYieldWeight = FixedPointMath.uq192x64(0);
+    _ctx.collateralizationLimit = FixedPointMath.FixedDecimal(COLL_LIMIT);
+    _ctx.accumulatedYieldWeight = FixedPointMath.FixedDecimal(0);
   }
 
   /// @dev Sets the pending governance.
@@ -323,7 +323,7 @@ contract Alchemist is  ReentrancyGuard {
     require(_limit >= MINIMUM_COLLATERALIZATION_LIMIT, "Alchemist: collateralization limit below minimum.");
     require(_limit <= MAXIMUM_COLLATERALIZATION_LIMIT, "Alchemist: collateralization limit above maximum.");
 
-    _ctx.collateralizationLimit = FixedPointMath.uq192x64(_limit);
+    _ctx.collateralizationLimit = FixedPointMath.FixedDecimal(_limit);
 
     emit CollateralizationLimitUpdated(_limit);
   }
@@ -348,7 +348,7 @@ contract Alchemist is  ReentrancyGuard {
   /// The collateralization limit is the minimum ratio of collateral to debt that is allowed by the system.
   ///
   /// @return the collateralization limit.
-  function collateralizationLimit() external view returns (FixedPointMath.uq192x64 memory) {
+  function collateralizationLimit() external view returns (FixedPointMath.FixedDecimal memory) {
     return _ctx.collateralizationLimit;
   }
 
@@ -395,7 +395,7 @@ contract Alchemist is  ReentrancyGuard {
       uint256 _feeAmount = _harvestedAmount.mul(harvestFee).div(PERCENT_RESOLUTION);
       uint256 _distributeAmount = _harvestedAmount.sub(_feeAmount);
 
-      FixedPointMath.uq192x64 memory _weight = FixedPointMath.fromU256(_distributeAmount).div(totalDeposited);
+      FixedPointMath.FixedDecimal memory _weight = FixedPointMath.fromU256(_distributeAmount).div(totalDeposited);
       _ctx.accumulatedYieldWeight = _ctx.accumulatedYieldWeight.add(_weight);
 
       if (_feeAmount > 0) {

@@ -17,7 +17,7 @@ import "hardhat/console.sol";
 ///
 /// @dev A library which provides the Pool data struct and associated functions.
 library Pool {
-  using FixedPointMath for FixedPointMath.uq192x64;
+  using FixedPointMath for FixedPointMath.FixedDecimal;
   using Pool for Pool.Data;
   using Pool for Pool.List;
   using SafeMath for uint256;
@@ -31,7 +31,7 @@ library Pool {
     IERC20 token;
     uint256 totalDeposited;
     uint256 rewardWeight;
-    FixedPointMath.uq192x64 accumulatedRewardWeight;
+    FixedPointMath.FixedDecimal accumulatedRewardWeight;
     uint256 lastUpdatedBlock;
   }
 
@@ -70,7 +70,7 @@ library Pool {
   /// @return the accumulated reward weight.
   function getUpdatedAccumulatedRewardWeight(Data storage _data, Context storage _ctx)
     internal view
-    returns (FixedPointMath.uq192x64 memory)
+    returns (FixedPointMath.FixedDecimal memory)
   {
     if (_data.totalDeposited == 0) {
       return _data.accumulatedRewardWeight;
@@ -88,7 +88,7 @@ library Pool {
       return _data.accumulatedRewardWeight;
     }
 
-    FixedPointMath.uq192x64 memory _rewardWeight = FixedPointMath.fromU256(_distributeAmount).div(_data.totalDeposited);
+    FixedPointMath.FixedDecimal memory _rewardWeight = FixedPointMath.fromU256(_distributeAmount).div(_data.totalDeposited);
     return _data.accumulatedRewardWeight.add(_rewardWeight);
   }
 
