@@ -82,7 +82,7 @@ contract TransmuterB is Context {
     mapping (address => bool) public whiteList;
 
     /// @dev The threshold above which excess funds will be deployed to yield farming activities
-    uint256 public plantableThreshold = 20000000000000000000000000; // 20mm
+    uint256 public plantableThreshold = 5000000000000000000000000; // 5mm
 
     /// @dev The % margin to trigger planting or recalling of funds
     uint256 public plantableMargin = 5;
