@@ -109,9 +109,15 @@ contract TransmuterEth is Context, ReentrancyGuard {
     /// @dev The address of the contract which will receive fees.
     address public rewards;
 
+    /// @dev A mapping of adapter addresses to keep track of vault adapters that have already been added
+    mapping(address => bool) public adapters;
+
     /// @dev A list of all of the vaults. The last element of the list is the vault that is currently being used for
     /// deposits and withdraws. VaultWithIndirections before the last element are considered inactive and are expected to be cleared.
     VaultWithIndirection.List private _vaults;
+
+    /// @dev make sure the contract is only initialized once.
+    bool public initialized;
 
     event GovernanceUpdated(
         address governance
@@ -635,7 +641,7 @@ contract TransmuterEth is Context, ReentrancyGuard {
     ///
     /// This function reverts if the caller is not governance
     ///
-    /// @param _toWhitelist the account to mint tokens to.
+    /// @param _toWhitelist the address to alter whitelist permissions.
     /// @param _state the whitelist state.
     function setWhitelist(address _toWhitelist, bool _state) external onlyGov() {
         whiteList[_toWhitelist] = _state;
@@ -646,15 +652,32 @@ contract TransmuterEth is Context, ReentrancyGuard {
     ///
     /// This function reverts if the caller is not governance
     ///
-    /// @param _keepers the account to mint tokens to.
-    /// @param _states the whitelist state.
+    /// @param _keepers the accounts to set states for.
+    /// @param _states the accounts states.
     function setKeepers(address[] calldata _keepers, bool[] calldata _states) external onlyGov() {
         uint256 n = _keepers.length;
         for(uint256 i = 0; i < n; i++) {
             keepers[_keepers[i]] = _states[i];
         }
-        
         emit KeepersSet(_keepers, _states);
+    }
+
+    /// @dev Initializes the contract.
+    ///
+    /// This function checks that the transmuter and rewards have been set and sets up the active vault.
+    ///
+    /// @param _adapter the vault adapter of the active vault.
+    function initialize(YearnVaultAdapterWithIndirection _adapter) external onlyGov {
+        require(!initialized, "Transmuter: already initialized");
+        require(rewards != ZERO_ADDRESS, "Transmuter: cannot initialize rewards address to 0x0");
+
+        _updateActiveVault(_adapter);
+
+        initialized = true;
+    }
+
+    function migrate(YearnVaultAdapterWithIndirection _adapter) external onlyGov() {
+        _updateActiveVault(_adapter);
     }
 
     /// @dev Updates the active vault.
@@ -663,16 +686,44 @@ contract TransmuterEth is Context, ReentrancyGuard {
     /// is not the token that this contract defines as the parent asset, or if the contract has not yet been initialized.
     ///
     /// @param _adapter the adapter for the new active vault.
-    function setActiveVault(YearnVaultAdapterWithIndirection _adapter) external onlyGov() {
+    function _updateActiveVault(YearnVaultAdapterWithIndirection _adapter) internal {
         require(_adapter != YearnVaultAdapterWithIndirection(ZERO_ADDRESS), "Transmuter: active vault address cannot be 0x0.");
         require(address(_adapter.token()) == token, "Transmuter.vault: token mismatch.");
-
+        require(!adapters[address(_adapter)], "Adapter already in use");
+        adapters[address(_adapter)] = true;
         _vaults.push(VaultWithIndirection.Data({
             adapter: _adapter,
             totalDeposited: 0
         }));
 
         emit ActiveVaultUpdated(_adapter);
+    }
+
+    /// @dev Gets the number of vaults in the vault list.
+    ///
+    /// @return the vault count.
+    function vaultCount() external view returns (uint256) {
+        return _vaults.length();
+    }
+
+    /// @dev Get the adapter of a vault.
+    ///
+    /// @param _vaultId the identifier of the vault.
+    ///
+    /// @return the vault adapter.
+    function getVaultAdapter(uint256 _vaultId) external view returns (address) {
+        VaultWithIndirection.Data storage _vault = _vaults.get(_vaultId);
+        return address(_vault.adapter);
+    }
+
+    /// @dev Get the total amount of the parent asset that has been deposited into a vault.
+    ///
+    /// @param _vaultId the identifier of the vault.
+    ///
+    /// @return the total amount of deposited tokens.
+    function getVaultTotalDeposited(uint256 _vaultId) external view returns (uint256) {
+        VaultWithIndirection.Data storage _vault = _vaults.get(_vaultId);
+        return _vault.totalDeposited;
     }
 
 
@@ -856,6 +907,13 @@ contract TransmuterEth is Context, ReentrancyGuard {
         IERC20Burnable(token).approve(migrateTo, migratableFunds);
         ITransmuter(migrateTo).distribute(address(this), migratableFunds);
         emit MigrationComplete(migrateTo, migratableFunds);
+    }
+
+    /// @dev Recover eth sent directly to the Alchemist
+    ///
+    /// only callable by governance
+    function recoverLostFunds() external onlyGov() {
+        payable(governance).transfer(address(this).balance);
     }
 
     receive() external payable {}
