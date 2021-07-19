@@ -97,6 +97,10 @@ contract AlchemistEth is ReentrancyGuard {
     bool status
   );
 
+  event ConversionPauseUpdated(
+    bool status
+  );
+
   event ActiveVaultUpdated(
     IVaultAdapter indexed adapter
   );
@@ -152,7 +156,7 @@ contract AlchemistEth is ReentrancyGuard {
     uint256 covertedAmount
   );
 
-  event WhitelistSet(
+  event KeepersSet(
     address[] accounts,
     bool[] flag
   );
@@ -197,6 +201,8 @@ contract AlchemistEth is ReentrancyGuard {
   /// from the active vault.
   bool public emergencyExit;
 
+  bool public pauseConvert;
+
   /// @dev The context shared between the CDPs.
   CDP.Context private _ctx;
 
@@ -204,12 +210,15 @@ contract AlchemistEth is ReentrancyGuard {
   /// create a new address or set up a proxy contract that interfaces with this contract.
   mapping(address => CDP.Data) private _cdps;
 
+  /// @dev A mapping of adapter addresses to keep track of vault adapters that have already been added
+  mapping(address => bool) public adapters;
+
   /// @dev A list of all of the vaults. The last element of the list is the vault that is currently being used for
   /// deposits and withdraws. Vaults before the last element are considered inactive and are expected to be cleared.
   Vault.List private _vaults;
 
   /// @dev A list of addresses that can call flush and harvest
-  mapping(address => bool) public whitelist;
+  mapping(address => bool) public keepers;
   
   constructor(
     IMintableERC20 _token,
@@ -228,6 +237,8 @@ contract AlchemistEth is ReentrancyGuard {
     governance = _governance;
     sentinel = _sentinel;
     flushActivator = 10000 ether;
+    emergencyExit = true;
+    pauseConvert = true;
 
     uint256 COLL_LIMIT = MINIMUM_COLLATERALIZATION_LIMIT.mul(4);
     _ctx.collateralizationLimit = FixedPointMath.FixedDecimal(COLL_LIMIT);
@@ -344,23 +355,34 @@ contract AlchemistEth is ReentrancyGuard {
   ///
   /// @param _emergencyExit if the contract should enter emergency exit mode.
   function setEmergencyExit(bool _emergencyExit) external {
-    require(msg.sender == governance || msg.sender == sentinel, "");
+    require(msg.sender == governance || msg.sender == sentinel, "!governance && !sentinel");
 
     emergencyExit = _emergencyExit;
 
     emit EmergencyExitUpdated(_emergencyExit);
   }
 
-  /// @dev Sets the addresses of the whitelist.
+  /// @dev Sets if the contract should pause conversions.
+  ///
+  /// @param _pauseConvert if the contract should pause conversions.
+  function setPauseConvert(bool _pauseConvert) external {
+    require(msg.sender == governance || msg.sender == sentinel, "!governance && !sentinel");
+
+    pauseConvert = _pauseConvert;
+
+    emit ConversionPauseUpdated(_pauseConvert);
+  }
+
+  /// @dev Sets the addresses of the keepers list.
   ///
   /// @param accounts the accounts to set.
   /// @param flags the flags for the accounts.
-  function setWhitelist(address[] calldata accounts, bool[] calldata flags) external {
+  function setKeepers(address[] calldata accounts, bool[] calldata flags) external onlyGov {
     uint256 numAccounts = accounts.length;
     for (uint256 i = 0; i < numAccounts; i++) {
-      whitelist[accounts[i]] = flags[i];
+      keepers[accounts[i]] = flags[i];
     }
-    emit WhitelistSet(accounts, flags);
+    emit KeepersSet(accounts, flags);
   }
 
   /// @dev Gets the collateralization limit.
@@ -405,7 +427,7 @@ contract AlchemistEth is ReentrancyGuard {
   /// @param _vaultId the identifier of the vault to harvest from.
   ///
   /// @return the amount of funds that were harvested from the vault.
-  function harvest(uint256 _vaultId) external expectInitialized onlyWhitelist returns (uint256, uint256) {
+  function harvest(uint256 _vaultId) external expectInitialized onlyKeeper returns (uint256, uint256) {
 
     Vault.Data storage _vault = _vaults.get(_vaultId);
 
@@ -458,7 +480,7 @@ contract AlchemistEth is ReentrancyGuard {
   /// additional funds.
   ///
   /// @return the amount of tokens flushed to the active vault.
-  function flush() external nonReentrant expectInitialized onlyWhitelist returns (uint256) {
+  function flush() external nonReentrant expectInitialized onlyKeeper returns (uint256) {
 
     // Prevent flushing to the active vault when an emergency exit is enabled to prevent potential loss of funds if
     // the active vault is poisoned for any reason.
@@ -591,6 +613,7 @@ contract AlchemistEth is ReentrancyGuard {
   ///
   /// @param _amount the amount of collateral to convert.
   function convert(uint256 _amount, bool asEth) external payable nonReentrant noContractAllowed expectInitialized {
+    require(!pauseConvert, "Alchemist: conversions are paused.");
     if (asEth) {
       require(_amount == msg.value, "_amount != msg.value");
       IWETH9(weth).deposit{value: _amount}();
@@ -756,8 +779,8 @@ contract AlchemistEth is ReentrancyGuard {
   /// @dev Checks that the current message sender or caller is the governance address.
   ///
   ///
-  modifier onlyWhitelist() {
-    require(whitelist[msg.sender], "Alchemist: only whitelist.");
+  modifier onlyKeeper() {
+    require(keepers[msg.sender], "Alchemist: only keepers.");
     _;
   }
 
@@ -770,7 +793,8 @@ contract AlchemistEth is ReentrancyGuard {
   function _updateActiveVault(IVaultAdapter _adapter) internal {
     require(_adapter != IVaultAdapter(ZERO_ADDRESS), "Alchemist: active vault address cannot be 0x0.");
     require(_adapter.token() == token, "Alchemist: token mismatch.");
-
+    require(!adapters[address(_adapter)], "Adapter already in use");
+    adapters[address(_adapter)] = true;
     _vaults.push(Vault.Data({
       adapter: _adapter,
       totalDeposited: 0
