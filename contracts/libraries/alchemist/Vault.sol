@@ -115,6 +115,10 @@ library Vault {
   ///
   /// @param _element the element to add.
   function push(List storage _self, Data memory _element) internal {
+    for (uint256 i = 0; i < _self.elements.length; i++) {
+			// Avoid duplicated adapter
+			require(address(_element.adapter) != address(_self.elements[i].adapter), '!Repeat adapter');
+		}
     _self.elements.push(_element);
   }
 
