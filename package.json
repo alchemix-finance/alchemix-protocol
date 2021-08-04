@@ -1,6 +1,6 @@
 {
   "name": "alchemix-protocol",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "main": "index.js",
   "repository": "git@github.com:alchemix-finance/alchemix-protocol.git",
   "author": "Alchemix Team",

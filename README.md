@@ -1,10 +1,10 @@
 # Alchemix
 
-## Contracts for the Alchemix protocol
+- /contracts : contracts for the Alchemix protocol
+- /deployments : current mainnet deployments of the Alchemix protocol, including abi's and addresses
+- /tests : tests for the contracts
 
-# Bug Bounty README
-
-## Overview
+## Bug Bounty
 
 This bug bounty document is to verify that Alchemix hosts a bug bounty on Immunefi at the address [https://immunefi.com/bounty/alchemix](https://immunefi.com/bounty/alchemix).
 
