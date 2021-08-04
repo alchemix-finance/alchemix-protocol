@@ -3,17 +3,15 @@ import chaiSubset from "chai-subset";
 import { solidity } from "ethereum-waffle";
 import { ethers } from "hardhat";
 import { ContractFactory, Signer, BigNumber, utils } from "ethers";
-import { AlToken } from "../../types/AlToken";
-import { Alchemist } from "../../types/Alchemist";
+import { AlEth } from "../../types/AlEth";
+import { AlchemistEth } from "../../types/AlchemistEth";
 import { VaultAdapterMockWithIndirection } from "../../types/VaultAdapterMockWithIndirection";
-
+import { VaultAdapterMock } from "../../types/VaultAdapterMock";
+import { Weth9 } from "../../types/Weth9";
 import { Erc20Mock } from "../../types/Erc20Mock";
 import { getAddress, parseEther, formatEther } from "ethers/lib/utils";
 import { MAXIMUM_U256, ZERO_ADDRESS, mineBlocks } from "../utils/helpers";
-import { TransmuterB } from "../../types/TransmuterB";
-import { waitForTxConfirmation } from "../../utils/txUtils";
-import { SSL_OP_EPHEMERAL_RSA } from "constants";
-import { Transmuter } from "../../types/Transmuter";
+import { TransmuterEth } from "../../types/TransmuterEth";
 
 chai.use(solidity);
 chai.use(chaiSubset);
@@ -21,44 +19,48 @@ chai.use(chaiSubset);
 const { expect } = chai;
 
 let AlchemistFactory: ContractFactory;
-let TransmuterBFactory: ContractFactory;
+let TransmuterEthFactory: ContractFactory;
 let ERC20MockFactory: ContractFactory;
-let AlUSDFactory: ContractFactory;
+let AlETHFactory: ContractFactory;
+let VaultAdapterMockWithIndirectionFactory: ContractFactory;
 let VaultAdapterMockFactory: ContractFactory;
+let Weth9Factory: ContractFactory;
 
-describe("TransmuterB", () => {
+describe("TransmuterEth", () => {
   let deployer: Signer;
   let depositor: Signer;
   let signers: Signer[];
-  let alchemist: Alchemist;
+  let alchemist: AlchemistEth;
   let governance: Signer;
   let minter: Signer;
   let rewards: Signer;
   let sentinel: Signer;
   let user: Signer;
   let mockAlchemist: Signer;
-  let token: Erc20Mock;
-  let transmuter: TransmuterB;
-  let adapter: VaultAdapterMockWithIndirection;
+  let token: Weth9;
+  let transmuter: TransmuterEth;
+  let adapter: VaultAdapterMock;
   let transVaultAdaptor: VaultAdapterMockWithIndirection;
-  let alUsd: AlToken;
+  let alEth: AlEth;
   let harvestFee = 1000;
   let ceilingAmt = utils.parseEther("10000000");
   let collateralizationLimit = "2000000000000000000";
   let mintAmount = 5000;
   let mockAlchemistAddress: string;
   let preTestTotalAlUSDSupply: BigNumber;
-  let keeprs;
-  let keeprStates;
 
   before(async () => {
-    TransmuterBFactory = await ethers.getContractFactory("TransmuterB");
+    TransmuterEthFactory = await ethers.getContractFactory("TransmuterEth");
     ERC20MockFactory = await ethers.getContractFactory("ERC20Mock");
-    AlUSDFactory = await ethers.getContractFactory("AlToken");
-    AlchemistFactory = await ethers.getContractFactory("Alchemist");
-    VaultAdapterMockFactory = await ethers.getContractFactory(
+    AlETHFactory = await ethers.getContractFactory("AlEth");
+    AlchemistFactory = await ethers.getContractFactory("AlchemistEth");
+    VaultAdapterMockWithIndirectionFactory = await ethers.getContractFactory(
       "VaultAdapterMockWithIndirection"
     );
+    VaultAdapterMockFactory = await ethers.getContractFactory(
+      "VaultAdapterMock"
+    );
+    Weth9Factory = await ethers.getContractFactory("WETH9");
   });
 
   beforeEach(async () => {
@@ -78,87 +80,103 @@ describe("TransmuterB", () => {
       ...signers
     ] = await ethers.getSigners();
 
-    keeprs = [await deployer.getAddress()];
-    keeprStates = [true]
+    token = (await Weth9Factory.connect(deployer).deploy()) as Weth9;
 
-    token = (await ERC20MockFactory.connect(deployer).deploy(
-      "Mock DAI",
-      "DAI",
-      18
-    )) as Erc20Mock;
-
-    alUsd = (await AlUSDFactory.connect(deployer).deploy()) as AlToken;
+    alEth = (await AlETHFactory.connect(deployer).deploy()) as AlEth;
 
     mockAlchemistAddress = await mockAlchemist.getAddress();
 
     alchemist = (await AlchemistFactory.connect(deployer).deploy(
       token.address,
-      alUsd.address,
+      alEth.address,
       await governance.getAddress(),
       await sentinel.getAddress()
-    )) as Alchemist;
-    transmuter = (await TransmuterBFactory.connect(deployer).deploy(
-      alUsd.address,
+    )) as AlchemistEth;
+    await alchemist.connect(governance).setEmergencyExit(false);
+    transmuter = (await TransmuterEthFactory.connect(deployer).deploy(
+      alEth.address,
       token.address,
       await governance.getAddress()
-    )) as TransmuterB;
-    transVaultAdaptor = (await VaultAdapterMockFactory.connect(deployer).deploy(
+    )) as TransmuterEth;
+    await transmuter.connect(governance).setPause(false);
+    transVaultAdaptor = (await VaultAdapterMockWithIndirectionFactory.connect(deployer).deploy(
         token.address
       )) as VaultAdapterMockWithIndirection;
-    await transmuter.connect(governance).setKeepers(keeprs, keeprStates);
-    await transmuter.connect(governance).setRewards(await rewards.getAddress())
-    await transmuter.connect(governance).initialize(transVaultAdaptor.address);
-    await transmuter.connect(governance).setTransmutationPeriod(40320);
-    await transmuter.connect(governance).setSentinel(await sentinel.getAddress());
     await alchemist.connect(governance).setTransmuter(transmuter.address);
     await alchemist.connect(governance).setRewards(await rewards.getAddress());
     await alchemist.connect(governance).setHarvestFee(harvestFee);
     await transmuter.connect(governance).setWhitelist(mockAlchemistAddress, true);
-
+    
     adapter = (await VaultAdapterMockFactory.connect(deployer).deploy(
       token.address
-    )) as VaultAdapterMockWithIndirection;
+      )) as VaultAdapterMock;
     await alchemist.connect(governance).initialize(adapter.address);
     await alchemist
       .connect(governance)
       .setCollateralizationLimit(collateralizationLimit);
-    await alUsd.connect(deployer).setWhitelist(alchemist.address, true);
-    await alUsd.connect(deployer).setCeiling(alchemist.address, ceilingAmt);
-    await token.mint(mockAlchemistAddress, utils.parseEther("10000"));
+    await transmuter.connect(governance).setRewards(adapter.address);
+    await transmuter.connect(governance).initialize(transVaultAdaptor.address);
+    await transmuter.connect(governance).setTransmutationPeriod(40320);
+    await transmuter.connect(governance).setSentinel(await sentinel.getAddress());
+    await alEth.connect(deployer).setWhitelist(alchemist.address, true);
+    await alEth.connect(deployer).setCeiling(alchemist.address, ceilingAmt);
+    await token.connect(mockAlchemist).deposit({value: utils.parseEther("10000")});
     await token.connect(mockAlchemist).approve(transmuter.address, MAXIMUM_U256);
 
-    await token.mint(await depositor.getAddress(), utils.parseEther("20000"));
-    await token.mint(await minter.getAddress(), utils.parseEther("20000"));
+    await token.connect(depositor).deposit({value: utils.parseEther("20000")});
+    await token.connect(minter).deposit({value: utils.parseEther("20000")});
     await token.connect(depositor).approve(transmuter.address, MAXIMUM_U256);
-    await alUsd.connect(depositor).approve(transmuter.address, MAXIMUM_U256);
+    await alEth.connect(depositor).approve(transmuter.address, MAXIMUM_U256);
     await token.connect(depositor).approve(alchemist.address, MAXIMUM_U256);
-    await alUsd.connect(depositor).approve(alchemist.address, MAXIMUM_U256);
+    await alEth.connect(depositor).approve(alchemist.address, MAXIMUM_U256);
     await token.connect(minter).approve(transmuter.address, MAXIMUM_U256);
-    await alUsd.connect(minter).approve(transmuter.address, MAXIMUM_U256);
+    await alEth.connect(minter).approve(transmuter.address, MAXIMUM_U256);
     await token.connect(minter).approve(alchemist.address, MAXIMUM_U256);
-    await alUsd.connect(minter).approve(alchemist.address, MAXIMUM_U256);
+    await alEth.connect(minter).approve(alchemist.address, MAXIMUM_U256);
 
-    await alchemist.connect(depositor).deposit(utils.parseEther("10000"));
+    await alchemist.connect(depositor).deposit(utils.parseEther("10000"), false);
     await alchemist.connect(depositor).mint(utils.parseEther("5000"));
 
-    await alchemist.connect(minter).deposit(utils.parseEther("10000"));
+    await alchemist.connect(minter).deposit(utils.parseEther("10000"), false);
     await alchemist.connect(minter).mint(utils.parseEther("5000"));
 
     transmuter = transmuter.connect(depositor)
 
-    preTestTotalAlUSDSupply = await alUsd.totalSupply();
+    preTestTotalAlUSDSupply = await alEth.totalSupply();
   });
+
+  describe("initialize()", () => {
+    it("reverts if the transmuter is already initialized", async () => {
+      expect(transmuter.connect(governance).initialize(transVaultAdaptor.address)).revertedWith('Transmuter: already initialized');
+    })
+  })
+
+  describe("migrate()", () => {
+    it("reverts if the new vault adaptor is already in use by another vault", async () => {
+      expect(transmuter.connect(governance).migrate(transVaultAdaptor.address)).revertedWith('Adapter already in use');
+    })
+
+    it("successfully updates the active vault to a new vault with a unique address", async () => {
+      let newAdaptor = (await VaultAdapterMockWithIndirectionFactory.connect(deployer).deploy(
+        token.address
+      )) as VaultAdapterMockWithIndirection;
+
+      await transmuter.connect(governance).migrate(newAdaptor.address)
+      expect(await transmuter.getVaultAdapter(0)).equal(transVaultAdaptor.address)
+      expect(await transmuter.getVaultAdapter(1)).equal(newAdaptor.address)
+    })
+  })
 
   describe("stake()", () => {
 
-    it("stakes 1000 alUsd and reads the correct amount", async () => {
+    it("stakes 1000 alEth and reads the correct amount", async () => {
       await transmuter.stake(1000);
       expect(
         await transmuter.depositedAlTokens(await depositor.getAddress())
       ).equal(1000);
     });
 
-    it("stakes 1000 alUsd two times and reads the correct amount", async () => {
+    it("stakes 1000 alEth two times and reads the correct amount", async () => {
       await transmuter.stake(1000);
       await transmuter.stake(1000);
       expect(
@@ -202,19 +220,19 @@ describe("TransmuterB", () => {
 
     beforeEach(async () => {
       await transmuter.connect(governance).setTransmutationPeriod(transmutationPeriod);
-      await token.mint(await minter.getAddress(), utils.parseEther("20000"));
+      await token.connect(minter).deposit({value: utils.parseEther("20000")});
       await token.connect(minter).approve(transmuter.address, MAXIMUM_U256);
-      await alUsd.connect(minter).approve(transmuter.address, MAXIMUM_U256);
+      await alEth.connect(minter).approve(transmuter.address, MAXIMUM_U256);
       await token.connect(minter).approve(alchemist.address, MAXIMUM_U256);
-      await alUsd.connect(minter).approve(alchemist.address, MAXIMUM_U256);
-      await alchemist.connect(minter).deposit(utils.parseEther("10000"));
+      await alEth.connect(minter).approve(alchemist.address, MAXIMUM_U256);
+      await alchemist.connect(minter).deposit(utils.parseEther("10000"), false);
       await alchemist.connect(minter).mint(utils.parseEther("5000"));
-      await token.mint(await rewards.getAddress(), utils.parseEther("20000"));
+      await token.connect(rewards).deposit({value: utils.parseEther("20000")});
       await token.connect(rewards).approve(transmuter.address, MAXIMUM_U256);
-      await alUsd.connect(rewards).approve(transmuter.address, MAXIMUM_U256);
+      await alEth.connect(rewards).approve(transmuter.address, MAXIMUM_U256);
       await token.connect(rewards).approve(alchemist.address, MAXIMUM_U256);
-      await alUsd.connect(rewards).approve(alchemist.address, MAXIMUM_U256);
-      await alchemist.connect(rewards).deposit(utils.parseEther("10000"));
+      await alEth.connect(rewards).approve(alchemist.address, MAXIMUM_U256);
+      await alchemist.connect(rewards).deposit(utils.parseEther("10000"), false);
       await alchemist.connect(rewards).mint(utils.parseEther("5000"));
     });
 
@@ -261,116 +279,233 @@ describe("TransmuterB", () => {
     let distributeAmt = utils.parseEther("500");
     let transmutedAmt = BigNumber.from("12400793650793600");
 
-    it("transmutes the correct amount", async () => {
-      await transmuter.stake(utils.parseEther("1000"));
-      await mineBlocks(ethers.provider, 10);
-      await transmuter.connect(mockAlchemist).distribute(mockAlchemistAddress, distributeAmt);
-      await transmuter.transmute();
-      let userInfo = await transmuter.userInfo(await depositor.getAddress());
-      expect(userInfo.realised).equal(transmutedAmt);
-    });
+    describe("WETH", () => {
+      it("transmutes the correct amount", async () => {
+        await transmuter.stake(utils.parseEther("1000"));
+        await mineBlocks(ethers.provider, 10);
+        await transmuter.connect(mockAlchemist).distribute(mockAlchemistAddress, distributeAmt);
+        await transmuter.transmute();
+        let userInfo = await transmuter.userInfo(await depositor.getAddress());
+        expect(userInfo.realised).equal(transmutedAmt);
+      });
+  
+      it("burns the supply of alUSD on transmute()", async () => {
+        await transmuter.stake(utils.parseEther("1000"));
+        await mineBlocks(ethers.provider, 10);
+        await transmuter.connect(mockAlchemist).distribute(mockAlchemistAddress, distributeAmt);
+        await transmuter.transmute();
+        let alUSDTokenSupply = await alEth.totalSupply();
+        expect(alUSDTokenSupply).equal(preTestTotalAlUSDSupply.sub(transmutedAmt));
+      });
 
-    it("burns the supply of alUSD on transmute()", async () => {
-      await transmuter.stake(utils.parseEther("1000"));
-      await mineBlocks(ethers.provider, 10);
-      await transmuter.connect(mockAlchemist).distribute(mockAlchemistAddress, distributeAmt);
-      await transmuter.transmute();
-      let alUSDTokenSupply = await alUsd.totalSupply();
-      expect(alUSDTokenSupply).equal(preTestTotalAlUSDSupply.sub(transmutedAmt));
-    });
+      it("moves DAI from pendingdivs to inbucket upon staking more", async () => {
+        await transmuter.stake(utils.parseEther("1000"));
+        await mineBlocks(ethers.provider, 10);
+        await transmuter.connect(mockAlchemist).distribute(mockAlchemistAddress, distributeAmt);
+        await transmuter.stake(utils.parseEther("100"));
+        let userInfo = await transmuter.userInfo(await depositor.getAddress());
+        expect(userInfo.inbucket).equal(transmutedAmt);
+      });
+  
+      it("transmutes and claims using transmute() and then claim(false)", async () => {
+        await transmuter.stake(utils.parseEther("1000"));
+        await mineBlocks(ethers.provider, 10);
+        await transmuter.connect(mockAlchemist).distribute(mockAlchemistAddress, distributeAmt);
+        let tokenBalanceBefore = await token.connect(depositor).balanceOf(await depositor.getAddress());
+        await transmuter.transmute();
+        await transmuter.claim(false);
+        let tokenBalanceAfter = await token.connect(depositor).balanceOf(await depositor.getAddress());
+        expect(tokenBalanceAfter).equal(tokenBalanceBefore.add(transmutedAmt));
+      });
+  
+      it("transmutes and claims using transmuteAndClaim(false)", async () => {
+        await transmuter.stake(utils.parseEther("1000"));
+        await mineBlocks(ethers.provider, 10);
+        await transmuter.connect(mockAlchemist).distribute(mockAlchemistAddress, distributeAmt);
+        let tokenBalanceBefore = await token.connect(depositor).balanceOf(await depositor.getAddress());
+        await transmuter.transmuteAndClaim(false);
+        let tokenBalanceAfter = await token.connect(depositor).balanceOf(await depositor.getAddress());
+        expect(tokenBalanceAfter).equal(tokenBalanceBefore.add(transmutedAmt));
+      });
+  
+      it("transmutes the full buffer if a complete phase has passed", async () => {
+        await transmuter.stake(utils.parseEther("1000"));
+        await transmuter.connect(governance).setTransmutationPeriod(10);
+        await transmuter.connect(mockAlchemist).distribute(mockAlchemistAddress, distributeAmt);
+        await mineBlocks(ethers.provider, 11);
+        let tokenBalanceBefore = await token.connect(depositor).balanceOf(await depositor.getAddress());
+        await transmuter.connect(depositor).transmuteAndClaim(false);
+        let tokenBalanceAfter = await token.connect(depositor).balanceOf(await depositor.getAddress());
+        expect(tokenBalanceAfter).equal(tokenBalanceBefore.add(distributeAmt));
+      });
+  
+      it("transmutes the staked amount and distributes overflow if a bucket overflows", async () => {
+        // 1) DEPOSITOR stakes 100 dai
+        // 2) distribution of 90 dai, let transmutation period pass
+        // DEPOSITOR gets 90 dai
+        // 3) MINTER stakes 200 dai
+        // 4) distribution of 60 dai, let transmutation period pass
+        // DEPOSITOR gets 20 dai, MINTER gets 40 dai
+        // 5) USER stakes 200 dai (to distribute allocations)
+        // 6) transmute DEPOSITOR, bucket overflows by 10 dai
+        // MINTER gets 5 dai, USER gets 5 dai
+        let distributeAmt0 = utils.parseEther("90")
+        let distributeAmt1 = utils.parseEther("60")
+        let depStakeAmt0 = utils.parseEther("100")
+        let depStakeAmt1 = utils.parseEther("200")
+        await transmuter.connect(governance).setTransmutationPeriod(10);
+        await token.connect(minter).approve(transmuter.address, MAXIMUM_U256);
+        await alEth.connect(minter).approve(transmuter.address, MAXIMUM_U256);
+        await alEth.connect(user).approve(transmuter.address, MAXIMUM_U256);
+        await token.connect(minter).approve(alchemist.address, MAXIMUM_U256);
+        await token.connect(user).approve(alchemist.address, MAXIMUM_U256);
+        await alEth.connect(minter).approve(alchemist.address, MAXIMUM_U256);
+        await alEth.connect(user).approve(alchemist.address, MAXIMUM_U256);
+        await token.connect(minter).deposit({value: utils.parseEther("20000")});
+        await alchemist.connect(minter).deposit(utils.parseEther("10000"), false);
+        await alchemist.connect(minter).mint(utils.parseEther("5000"));
+        await token.connect(user).deposit({value: utils.parseEther("20000")});
+        await alchemist.connect(user).deposit(utils.parseEther("10000"), false);
+        await alchemist.connect(user).mint(utils.parseEther("5000"));
+  
+        // user 1 deposit
+        await transmuter.connect(depositor).stake(depStakeAmt0);
+        await transmuter.connect(mockAlchemist).distribute(mockAlchemistAddress, distributeAmt0);
+        await mineBlocks(ethers.provider, 10);
+  
+        // user 2 deposit
+        await transmuter.connect(minter).stake(depStakeAmt1);
+        await transmuter.connect(mockAlchemist).distribute(mockAlchemistAddress, distributeAmt1);
+        await mineBlocks(ethers.provider, 10);
+  
+        await transmuter.connect(user).stake(depStakeAmt1);
+  
+        let minterInfo = await transmuter.userInfo(await minter.getAddress());
+        let minterBucketBefore = minterInfo.inbucket;
+        await transmuter.connect(depositor).transmuteAndClaim(false);
+        minterInfo = await transmuter.userInfo(await minter.getAddress());
+        let userInfo = await transmuter.userInfo(await user.getAddress());
+  
+        let minterBucketAfter = minterInfo.inbucket;
+        expect(minterBucketAfter).equal(minterBucketBefore.add(parseEther("5")));
+        expect(userInfo.inbucket).equal(parseEther("5"));
+      });
+    })
 
-    it("moves DAI from pendingdivs to inbucket upon staking more", async () => {
-      await transmuter.stake(utils.parseEther("1000"));
-      await mineBlocks(ethers.provider, 10);
-      await transmuter.connect(mockAlchemist).distribute(mockAlchemistAddress, distributeAmt);
-      await transmuter.stake(utils.parseEther("100"));
-      let userInfo = await transmuter.userInfo(await depositor.getAddress());
-      expect(userInfo.inbucket).equal(transmutedAmt);
-    });
+    describe("ETH", () => {
+      let epsilon = parseEther(".1");
 
-    it("transmutes and claims using transmute() and then claim()", async () => {
-      await transmuter.stake(utils.parseEther("1000"));
-      await mineBlocks(ethers.provider, 10);
-      await transmuter.connect(mockAlchemist).distribute(mockAlchemistAddress, distributeAmt);
-      let tokenBalanceBefore = await token.connect(depositor).balanceOf(await depositor.getAddress());
-      await transmuter.transmute();
-      await transmuter.claim();
-      let tokenBalanceAfter = await token.connect(depositor).balanceOf(await depositor.getAddress());
-      expect(tokenBalanceAfter).equal(tokenBalanceBefore.add(transmutedAmt));
-    });
-
-    it("transmutes and claims using transmuteAndClaim()", async () => {
-      await transmuter.stake(utils.parseEther("1000"));
-      await mineBlocks(ethers.provider, 10);
-      await transmuter.connect(mockAlchemist).distribute(mockAlchemistAddress, distributeAmt);
-      let tokenBalanceBefore = await token.connect(depositor).balanceOf(await depositor.getAddress());
-      await transmuter.transmuteAndClaim();
-      let tokenBalanceAfter = await token.connect(depositor).balanceOf(await depositor.getAddress());
-      expect(tokenBalanceAfter).equal(tokenBalanceBefore.add(transmutedAmt));
-    });
-
-    it("transmutes the full buffer if a complete phase has passed", async () => {
-      await transmuter.stake(utils.parseEther("1000"));
-      await transmuter.connect(governance).setTransmutationPeriod(10);
-      await transmuter.connect(mockAlchemist).distribute(mockAlchemistAddress, distributeAmt);
-      await mineBlocks(ethers.provider, 11);
-      let tokenBalanceBefore = await token.connect(depositor).balanceOf(await depositor.getAddress());
-      await transmuter.connect(depositor).transmuteAndClaim();
-      let tokenBalanceAfter = await token.connect(depositor).balanceOf(await depositor.getAddress());
-      expect(tokenBalanceAfter).equal(tokenBalanceBefore.add(distributeAmt));
-    });
-
-    it("transmutes the staked amount and distributes overflow if a bucket overflows", async () => {
-      // 1) DEPOSITOR stakes 100 dai
-      // 2) distribution of 90 dai, let transmutation period pass
-      // DEPOSITOR gets 90 dai
-      // 3) MINTER stakes 200 dai
-      // 4) distribution of 60 dai, let transmutation period pass
-      // DEPOSITOR gets 20 dai, MINTER gets 40 dai
-      // 5) USER stakes 200 dai (to distribute allocations)
-      // 6) transmute DEPOSITOR, bucket overflows by 10 dai
-      // MINTER gets 5 dai, USER gets 5 dai
-      let distributeAmt0 = utils.parseEther("90")
-      let distributeAmt1 = utils.parseEther("60")
-      let depStakeAmt0 = utils.parseEther("100")
-      let depStakeAmt1 = utils.parseEther("200")
-      await transmuter.connect(governance).setTransmutationPeriod(10);
-      await token.connect(minter).approve(transmuter.address, MAXIMUM_U256);
-      await alUsd.connect(minter).approve(transmuter.address, MAXIMUM_U256);
-      await alUsd.connect(user).approve(transmuter.address, MAXIMUM_U256);
-      await token.connect(minter).approve(alchemist.address, MAXIMUM_U256);
-      await token.connect(user).approve(alchemist.address, MAXIMUM_U256);
-      await alUsd.connect(minter).approve(alchemist.address, MAXIMUM_U256);
-      await alUsd.connect(user).approve(alchemist.address, MAXIMUM_U256);
-      await token.mint(await minter.getAddress(), utils.parseEther("20000"));
-      await alchemist.connect(minter).deposit(utils.parseEther("10000"));
-      await alchemist.connect(minter).mint(utils.parseEther("5000"));
-      await token.mint(await user.getAddress(), utils.parseEther("20000"));
-      await alchemist.connect(user).deposit(utils.parseEther("10000"));
-      await alchemist.connect(user).mint(utils.parseEther("5000"));
-
-      // user 1 deposit
-      await transmuter.connect(depositor).stake(depStakeAmt0);
-      await transmuter.connect(mockAlchemist).distribute(mockAlchemistAddress, distributeAmt0);
-      await mineBlocks(ethers.provider, 10);
-
-      // user 2 deposit
-      await transmuter.connect(minter).stake(depStakeAmt1);
-      await transmuter.connect(mockAlchemist).distribute(mockAlchemistAddress, distributeAmt1);
-      await mineBlocks(ethers.provider, 10);
-
-      await transmuter.connect(user).stake(depStakeAmt1);
-
-      let minterInfo = await transmuter.userInfo(await minter.getAddress());
-      let minterBucketBefore = minterInfo.inbucket;
-      await transmuter.connect(depositor).transmuteAndClaim();
-      minterInfo = await transmuter.userInfo(await minter.getAddress());
-      let userInfo = await transmuter.userInfo(await user.getAddress());
-
-      let minterBucketAfter = minterInfo.inbucket;
-      expect(minterBucketAfter).equal(minterBucketBefore.add(parseEther("5")));
-      expect(userInfo.inbucket).equal(parseEther("5"));
-    });
+      it("transmutes the correct amount", async () => {
+        await transmuter.stake(utils.parseEther("1000"));
+        await mineBlocks(ethers.provider, 10);
+        await transmuter.connect(mockAlchemist).distribute(mockAlchemistAddress, distributeAmt);
+        await transmuter.transmute();
+        let userInfo = await transmuter.userInfo(await depositor.getAddress());
+        expect(userInfo.realised).equal(transmutedAmt);
+      });
+  
+      it("burns the supply of alUSD on transmute()", async () => {
+        await transmuter.stake(utils.parseEther("1000"));
+        await mineBlocks(ethers.provider, 10);
+        await transmuter.connect(mockAlchemist).distribute(mockAlchemistAddress, distributeAmt);
+        await transmuter.transmute();
+        let alUSDTokenSupply = await alEth.totalSupply();
+        expect(alUSDTokenSupply).equal(preTestTotalAlUSDSupply.sub(transmutedAmt));
+      });
+  
+      it("moves DAI from pendingdivs to inbucket upon staking more", async () => {
+        await transmuter.stake(utils.parseEther("1000"));
+        await mineBlocks(ethers.provider, 10);
+        await transmuter.connect(mockAlchemist).distribute(mockAlchemistAddress, distributeAmt);
+        await transmuter.stake(utils.parseEther("100"));
+        let userInfo = await transmuter.userInfo(await depositor.getAddress());
+        expect(userInfo.inbucket).equal(transmutedAmt);
+      });
+  
+      it("transmutes and claims using transmute() and then claim(true)", async () => {
+        await transmuter.stake(utils.parseEther("1000"));
+        await mineBlocks(ethers.provider, 10);
+        await transmuter.connect(mockAlchemist).distribute(mockAlchemistAddress, distributeAmt);
+        let tokenBalanceBefore = await depositor.getBalance();
+        await transmuter.transmute();
+        await transmuter.claim(true);
+        let tokenBalanceAfter = await depositor.getBalance();
+        expect(tokenBalanceBefore.add(transmutedAmt).sub(tokenBalanceAfter)).lt(epsilon);
+      });
+  
+      it("transmutes and claims using transmuteAndClaim(true)", async () => {
+        await transmuter.stake(utils.parseEther("1000"));
+        await mineBlocks(ethers.provider, 10);
+        await transmuter.connect(mockAlchemist).distribute(mockAlchemistAddress, distributeAmt);
+        let tokenBalanceBefore = await depositor.getBalance();
+        await transmuter.transmuteAndClaim(true);
+        let tokenBalanceAfter = await depositor.getBalance();
+        expect(tokenBalanceBefore.add(transmutedAmt).sub(tokenBalanceAfter)).lt(epsilon);
+      });
+  
+      it("transmutes the full buffer if a complete phase has passed", async () => {
+        await transmuter.stake(utils.parseEther("1000"));
+        await transmuter.connect(governance).setTransmutationPeriod(10);
+        await transmuter.connect(mockAlchemist).distribute(mockAlchemistAddress, distributeAmt);
+        await mineBlocks(ethers.provider, 11);
+        let tokenBalanceBefore = await depositor.getBalance();
+        await transmuter.connect(depositor).transmuteAndClaim(true);
+        let tokenBalanceAfter = await depositor.getBalance();
+        expect(tokenBalanceBefore.add(distributeAmt).sub(tokenBalanceAfter)).lt(epsilon);
+      });
+  
+      it("transmutes the staked amount and distributes overflow if a bucket overflows", async () => {
+        // 1) DEPOSITOR stakes 100 dai
+        // 2) distribution of 90 dai, let transmutation period pass
+        // DEPOSITOR gets 90 dai
+        // 3) MINTER stakes 200 dai
+        // 4) distribution of 60 dai, let transmutation period pass
+        // DEPOSITOR gets 20 dai, MINTER gets 40 dai
+        // 5) USER stakes 200 dai (to distribute allocations)
+        // 6) transmute DEPOSITOR, bucket overflows by 10 dai
+        // MINTER gets 5 dai, USER gets 5 dai
+        let distributeAmt0 = utils.parseEther("90")
+        let distributeAmt1 = utils.parseEther("60")
+        let depStakeAmt0 = utils.parseEther("100")
+        let depStakeAmt1 = utils.parseEther("200")
+        await transmuter.connect(governance).setTransmutationPeriod(10);
+        await token.connect(minter).approve(transmuter.address, MAXIMUM_U256);
+        await alEth.connect(minter).approve(transmuter.address, MAXIMUM_U256);
+        await alEth.connect(user).approve(transmuter.address, MAXIMUM_U256);
+        await token.connect(minter).approve(alchemist.address, MAXIMUM_U256);
+        await token.connect(user).approve(alchemist.address, MAXIMUM_U256);
+        await alEth.connect(minter).approve(alchemist.address, MAXIMUM_U256);
+        await alEth.connect(user).approve(alchemist.address, MAXIMUM_U256);
+        await token.connect(minter).deposit({value: utils.parseEther("20000")});
+        await alchemist.connect(minter).deposit(utils.parseEther("10000"), false);
+        await alchemist.connect(minter).mint(utils.parseEther("5000"));
+        await token.connect(user).deposit({value: utils.parseEther("20000")});
+        await alchemist.connect(user).deposit(utils.parseEther("10000"), false);
+        await alchemist.connect(user).mint(utils.parseEther("5000"));
+  
+        // user 1 deposit
+        await transmuter.connect(depositor).stake(depStakeAmt0);
+        await transmuter.connect(mockAlchemist).distribute(mockAlchemistAddress, distributeAmt0);
+        await mineBlocks(ethers.provider, 10);
+  
+        // user 2 deposit
+        await transmuter.connect(minter).stake(depStakeAmt1);
+        await transmuter.connect(mockAlchemist).distribute(mockAlchemistAddress, distributeAmt1);
+        await mineBlocks(ethers.provider, 10);
+  
+        await transmuter.connect(user).stake(depStakeAmt1);
+  
+        let minterInfo = await transmuter.userInfo(await minter.getAddress());
+        let minterBucketBefore = minterInfo.inbucket;
+        await transmuter.connect(depositor).transmuteAndClaim(true);
+        minterInfo = await transmuter.userInfo(await minter.getAddress());
+        let userInfo = await transmuter.userInfo(await user.getAddress());
+  
+        let minterBucketAfter = minterInfo.inbucket;
+        expect(minterBucketAfter).equal(minterBucketBefore.add(parseEther("5")));
+        expect(userInfo.inbucket).equal(parseEther("5"));
+      });
+    })
 
     describe("ensureSufficientFundsExistLocally()", async () => {
 
@@ -397,7 +532,7 @@ describe("TransmuterB", () => {
           transmuterPreClaimBal = await token.balanceOf(transmuter.address);
           userPreClaimBal = await token.balanceOf(await depositor.getAddress());
           vaultPreClaimBal = await transVaultAdaptor.totalValue();
-          await transmuter.claim();
+          await transmuter.claim(false);
         })
 
         it("recalls enough funds to handle the claim request", async () => {
@@ -419,7 +554,7 @@ describe("TransmuterB", () => {
           await transmuter.connect(depositor).stake(stakeAmt2);
           await mineBlocks(ethers.provider, 10);
           await transmuter.connect(depositor).transmute();
-          await transmuter.claim();
+          await transmuter.claim(false);
 
           let transmuterPostClaimBal = await token.balanceOf(transmuter.address);
           expect(transmuterPostClaimBal).equal(distributeAmt.sub(stakeAmt.add(stakeAmt2)))
@@ -441,7 +576,7 @@ describe("TransmuterB", () => {
           transmuterPreClaimBal = await token.balanceOf(transmuter.address);
           userPreClaimBal = await token.balanceOf(await depositor.getAddress());
           vaultPreClaimBal = await transVaultAdaptor.totalValue();
-          await transmuter.claim();
+          await transmuter.claim(false);
         })
   
         it("does not recall funds from the vault if resulting balance is under plantableThreshold", async () => {
@@ -456,51 +591,87 @@ describe("TransmuterB", () => {
   describe("transmuteClaimAndWithdraw()", () => {
     let distributeAmt = utils.parseEther("500");
     let transmutedAmt = BigNumber.from("6200396825396800");
-    let alUsdBalanceBefore: BigNumber;
+    let alEthBalanceBefore: BigNumber;
     let tokenBalanceBefore: BigNumber;
 
-    beforeEach(async () => {
-      tokenBalanceBefore = await token.connect(depositor).balanceOf(await depositor.getAddress());
-      alUsdBalanceBefore = await alUsd.connect(depositor).balanceOf(await depositor.getAddress());
-      await transmuter.stake(utils.parseEther("1000"));
-      await transmuter.connect(minter).stake(utils.parseEther("1000"));
-      await mineBlocks(ethers.provider, 10);
-      await transmuter.connect(mockAlchemist).distribute(mockAlchemistAddress, distributeAmt);
-      await transmuter.transmuteClaimAndWithdraw();
+    describe("WETH", () => {
+      beforeEach(async () => {
+        tokenBalanceBefore = await token.connect(depositor).balanceOf(await depositor.getAddress());
+        alEthBalanceBefore = await alEth.connect(depositor).balanceOf(await depositor.getAddress());
+        await transmuter.stake(utils.parseEther("1000"));
+        await transmuter.connect(minter).stake(utils.parseEther("1000"));
+        await mineBlocks(ethers.provider, 10);
+        await transmuter.connect(mockAlchemist).distribute(mockAlchemistAddress, distributeAmt);
+        await transmuter.transmuteClaimAndWithdraw(false);
+      })
+  
+      it("has a staking balance of 0 alUSD after transmuteClaimAndWithdraw()", async () => {
+        let userInfo = await transmuter.userInfo(await depositor.getAddress());
+        expect(userInfo.depositedAl).equal(0);
+        expect(await transmuter.depositedAlTokens(await depositor.getAddress())).equal(0);
+      });
+  
+      it("returns the amount of alUSD staked less the transmuted amount", async () => {
+        let alEthBalanceAfter = await alEth.connect(depositor).balanceOf(await depositor.getAddress());
+        expect(alEthBalanceAfter).equal(alEthBalanceBefore.sub(transmutedAmt))
+      });
+  
+      it("burns the correct amount of transmuted alUSD using transmuteClaimAndWithdraw()", async () => {
+        let alUSDTokenSupply = await alEth.totalSupply();
+        expect(alUSDTokenSupply).equal(preTestTotalAlUSDSupply.sub(transmutedAmt));
+      });
+  
+      it("successfully sends DAI to owner using transmuteClaimAndWithdraw()", async () => {
+        let tokenBalanceAfter = await token.connect(depositor).balanceOf(await depositor.getAddress());
+        expect(tokenBalanceAfter).equal(tokenBalanceBefore.add(transmutedAmt));
+      });
     })
 
-    it("has a staking balance of 0 alUSD after transmuteClaimAndWithdraw()", async () => {
-      let userInfo = await transmuter.userInfo(await depositor.getAddress());
-      expect(userInfo.depositedAl).equal(0);
-      expect(await transmuter.depositedAlTokens(await depositor.getAddress())).equal(0);
-    });
+    describe("ETH", () => {
+      let epsilon = parseEther(".1");
 
-    it("returns the amount of alUSD staked less the transmuted amount", async () => {
-      let alUsdBalanceAfter = await alUsd.connect(depositor).balanceOf(await depositor.getAddress());
-      expect(alUsdBalanceAfter).equal(alUsdBalanceBefore.sub(transmutedAmt))
-    });
-
-    it("burns the correct amount of transmuted alUSD using transmuteClaimAndWithdraw()", async () => {
-      let alUSDTokenSupply = await alUsd.totalSupply();
-      expect(alUSDTokenSupply).equal(preTestTotalAlUSDSupply.sub(transmutedAmt));
-    });
-
-    it("successfully sends DAI to owner using transmuteClaimAndWithdraw()", async () => {
-      let tokenBalanceAfter = await token.connect(depositor).balanceOf(await depositor.getAddress());
-      expect(tokenBalanceAfter).equal(tokenBalanceBefore.add(transmutedAmt));
-    });
-
+      beforeEach(async () => {
+        tokenBalanceBefore = await depositor.getBalance();
+        alEthBalanceBefore = await alEth.connect(depositor).balanceOf(await depositor.getAddress());
+        await transmuter.stake(utils.parseEther("1000"));
+        await transmuter.connect(minter).stake(utils.parseEther("1000"));
+        await mineBlocks(ethers.provider, 10);
+        await transmuter.connect(mockAlchemist).distribute(mockAlchemistAddress, distributeAmt);
+        await transmuter.transmuteClaimAndWithdraw(true);
+      })
+  
+      it("has a staking balance of 0 alUSD after transmuteClaimAndWithdraw(true)", async () => {
+        let userInfo = await transmuter.userInfo(await depositor.getAddress());
+        expect(userInfo.depositedAl).equal(0);
+        expect(await transmuter.depositedAlTokens(await depositor.getAddress())).equal(0);
+      });
+  
+      it("returns the amount of alUSD staked less the transmuted amount", async () => {
+        let alEthBalanceAfter = await alEth.connect(depositor).balanceOf(await depositor.getAddress());
+        expect(alEthBalanceAfter).equal(alEthBalanceBefore.sub(transmutedAmt))
+      });
+  
+      it("burns the correct amount of transmuted alUSD using transmuteClaimAndWithdraw(true)", async () => {
+        let alUSDTokenSupply = await alEth.totalSupply();
+        expect(alUSDTokenSupply).equal(preTestTotalAlUSDSupply.sub(transmutedAmt));
+      });
+  
+      it("successfully sends ETH to owner using transmuteClaimAndWithdraw(true)", async () => {
+        let tokenBalanceAfter = await depositor.getBalance();
+        expect(tokenBalanceBefore.add(transmutedAmt).sub(tokenBalanceAfter)).lt(epsilon);
+      });
+    })
   });
 
   describe("exit()", () => {
     let distributeAmt = utils.parseEther("500");
     let transmutedAmt = BigNumber.from("6200396825396800");
-    let alUsdBalanceBefore: BigNumber;
+    let alEthBalanceBefore: BigNumber;
     let tokenBalanceBefore: BigNumber;
 
     beforeEach(async () => {
       tokenBalanceBefore = await token.connect(depositor).balanceOf(await depositor.getAddress());
-      alUsdBalanceBefore = await alUsd.connect(depositor).balanceOf(await depositor.getAddress());
+      alEthBalanceBefore = await alEth.connect(depositor).balanceOf(await depositor.getAddress());
       await transmuter.stake(utils.parseEther("1000"));
       await transmuter.connect(minter).stake(utils.parseEther("1000"));
       await mineBlocks(ethers.provider, 10);
@@ -509,8 +680,8 @@ describe("TransmuterB", () => {
     })
 
     it("transmutes and then withdraws alUSD from staking", async () => {
-      let alUsdBalanceAfter = await alUsd.connect(depositor).balanceOf(await depositor.getAddress());
-      expect(alUsdBalanceAfter).equal(alUsdBalanceBefore.sub(transmutedAmt));
+      let alEthBalanceAfter = await alEth.connect(depositor).balanceOf(await depositor.getAddress());
+      expect(alEthBalanceAfter).equal(alEthBalanceBefore.sub(transmutedAmt));
     });
 
     it("transmutes and claimable DAI moves to realised value", async () => {
@@ -527,27 +698,28 @@ describe("TransmuterB", () => {
 
   describe("forceTransmute()", () => {
     let distributeAmt = utils.parseEther("5000");
+    let epsilon = parseEther(".1");
 
     beforeEach(async () => {
       transmuter.connect(governance).setTransmutationPeriod(10);
-      await token.mint(await minter.getAddress(), utils.parseEther("20000"));
+      await token.connect(minter).deposit({value: utils.parseEther("20000")});
       await token.connect(minter).approve(transmuter.address, MAXIMUM_U256);
-      await alUsd.connect(minter).approve(transmuter.address, MAXIMUM_U256);
+      await alEth.connect(minter).approve(transmuter.address, MAXIMUM_U256);
       await token.connect(minter).approve(alchemist.address, MAXIMUM_U256);
-      await alUsd.connect(minter).approve(alchemist.address, MAXIMUM_U256);
-      await alchemist.connect(minter).deposit(utils.parseEther("10000"));
+      await alEth.connect(minter).approve(alchemist.address, MAXIMUM_U256);
+      await alchemist.connect(minter).deposit(utils.parseEther("10000"), false);
       await alchemist.connect(minter).mint(utils.parseEther("5000"));
       await transmuter.connect(depositor).stake(utils.parseEther(".01"));
     });
 
-    it("User 'depositor' has alUSD overfilled, user 'minter' force transmutes user 'depositor' and user 'depositor' has DAI sent to his address", async () => {
+    it("User 'depositor' has alUSD overfilled, user 'minter' force transmutes user 'depositor' and user 'depositor' has ETH sent to his address", async () => {
       await transmuter.connect(minter).stake(utils.parseEther("10"));
       await transmuter.connect(mockAlchemist).distribute(mockAlchemistAddress, distributeAmt);
       await mineBlocks(ethers.provider, 10);
-      let tokenBalanceBefore = await token.connect(depositor).balanceOf(await depositor.getAddress());
+      let ethBalanceBefore = await depositor.getBalance();
       await transmuter.connect(minter).forceTransmute(await depositor.getAddress());
-      let tokenBalanceAfter = await token.connect(depositor).balanceOf(await depositor.getAddress());
-      expect(tokenBalanceBefore).equal(tokenBalanceAfter.sub(utils.parseEther("0.01")));
+      let ethBalanceAfter = await depositor.getBalance();
+      expect(ethBalanceBefore).equal(ethBalanceAfter.sub(utils.parseEther("0.01")));
     });
 
     it("User 'depositor' has alUSD overfilled, user 'minter' force transmutes user 'depositor' and user 'minter' overflow added inbucket", async () => {
@@ -564,19 +736,21 @@ describe("TransmuterB", () => {
       await transmuter.connect(minter).stake(utils.parseEther("1"));
       await transmuter.connect(mockAlchemist).distribute(mockAlchemistAddress, distributeAmt);
       await mineBlocks(ethers.provider, 10);
-      let tokenBalanceBefore = await token.connect(depositor).balanceOf(await depositor.getAddress());
+      let tokenBalanceBefore = await depositor.getBalance();
       await transmuter.connect(depositor).forceTransmute(await depositor.getAddress());
-      let tokenBalanceAfter = await token.connect(depositor).balanceOf(await depositor.getAddress());
-      expect(tokenBalanceBefore).equal(tokenBalanceAfter.sub(utils.parseEther("0.01")));
+      let tokenBalanceAfter = await depositor.getBalance();
+      let expectedBalanceAfter = tokenBalanceAfter.sub(utils.parseEther("0.01"));
+      expect(tokenBalanceBefore.sub(expectedBalanceAfter)).lt(epsilon);
     });
 
     it("you can force transmute yourself even when you are the only one in the transmuter", async () => {
       await transmuter.connect(mockAlchemist).distribute(mockAlchemistAddress, distributeAmt);
       await mineBlocks(ethers.provider, 10);
-      let tokenBalanceBefore = await token.connect(depositor).balanceOf(await depositor.getAddress());
+      let tokenBalanceBefore = await depositor.getBalance();
       await transmuter.connect(depositor).forceTransmute(await depositor.getAddress());
-      let tokenBalanceAfter = await token.connect(depositor).balanceOf(await depositor.getAddress());
-      expect(tokenBalanceBefore).equal(tokenBalanceAfter.sub(utils.parseEther("0.01")));
+      let tokenBalanceAfter = await depositor.getBalance();
+      let expectedBalanceAfter = tokenBalanceAfter.sub(utils.parseEther("0.01"));
+      expect(tokenBalanceBefore.sub(expectedBalanceAfter)).lt(epsilon);
     });
 
     it("reverts when you are not overfilled", async () => {
@@ -702,7 +876,7 @@ describe("TransmuterB", () => {
             // transmute and claim staked 50
             await mineBlocks(ethers.provider, 10);
             await transmuter.connect(depositor).transmute();
-            await transmuter.claim();
+            await transmuter.claim(false);
             // transmuterBal = 50, vaultBal = 50
           })
 
@@ -828,7 +1002,7 @@ describe("TransmuterB", () => {
         await transmuter.connect(sentinel).setPause(true);
         let transmuterPreRecallBal = await token.balanceOf(transmuter.address);
 
-        let newVault = (await VaultAdapterMockFactory.connect(deployer).deploy(
+        let newVault = (await VaultAdapterMockWithIndirectionFactory.connect(deployer).deploy(
           token.address
         )) as VaultAdapterMockWithIndirection;
         await transmuter.connect(governance).migrate(newVault.address);
@@ -913,10 +1087,15 @@ describe("TransmuterB", () => {
       let transmuterPreDistributeBal = await token.balanceOf(transmuter.address); // 0
     })
 
+    it("reverts if the caller is not a keeper", async () => {
+      expect(transmuter.connect(depositor).harvest(0)).revertedWith("Transmuter: !keeper");
+    })
+
     it("harvests yield from the vault", async () => {
+      await transmuter.connect(governance).setKeepers([await depositor.getAddress()], [true])
       let rewardsAddress = await rewards.getAddress()
       let transBalPreHarvest = await token.balanceOf(rewardsAddress);
-      await transmuter.connect(deployer).harvest(0);
+      await transmuter.connect(depositor).harvest(0);
       let transBalPostHarvest = await token.balanceOf(rewardsAddress);
       expect(transBalPostHarvest).equal(transBalPreHarvest.add(yieldAmt))
     });
@@ -928,24 +1107,22 @@ describe("TransmuterB", () => {
     let plantableThreshold = parseEther("20");
     let stakeAmt = parseEther("50");
     let distributeAmt = parseEther("100");
-    let newTransmuter: TransmuterB;
+    let newTransmuter: TransmuterEth;
     let newTransVaultAdaptor: VaultAdapterMockWithIndirection;
 
     beforeEach(async () => {
-      newTransmuter = (await TransmuterBFactory.connect(deployer).deploy(
-        alUsd.address,
+      newTransmuter = (await TransmuterEthFactory.connect(deployer).deploy(
+        alEth.address,
         token.address,
         await governance.getAddress()
-      )) as TransmuterB;
+      )) as TransmuterEth;
       newTransVaultAdaptor = (await VaultAdapterMockFactory.connect(deployer).deploy(
         token.address
       )) as VaultAdapterMockWithIndirection;
-      await transmuter.connect(governance).setRewards(await rewards.getAddress());
-      await newTransmuter.connect(governance).setKeepers(keeprs, keeprStates);
-      await newTransmuter.connect(governance).setRewards(await rewards.getAddress());
-      await newTransmuter.connect(governance).initialize(newTransVaultAdaptor.address);
-      await newTransmuter.connect(governance).setWhitelist(transmuter.address, true);
+      newTransmuter.connect(governance).migrate(newTransVaultAdaptor.address);
+      newTransmuter.connect(governance).setWhitelist(transmuter.address, true);
       await transmuter.connect(governance).setTransmutationPeriod(transmutationPeriod);
+      await transmuter.connect(governance).setRewards(await rewards.getAddress());
       await transmuter.connect(depositor).stake(stakeAmt);
       await transmuter.connect(governance).setPlantableThreshold(plantableThreshold);
       await transmuter.connect(mockAlchemist).distribute(mockAlchemistAddress, distributeAmt);
