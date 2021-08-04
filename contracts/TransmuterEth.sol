@@ -9,10 +9,6 @@ import {YearnVaultAdapterWithIndirection} from "./adapters/YearnVaultAdapterWith
 import {VaultWithIndirection} from "./libraries/alchemist/VaultWithIndirection.sol";
 import {ITransmuter} from "./interfaces/ITransmuter.sol";
 import {IWETH9} from "./interfaces/IWETH9.sol";
-import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-
-
-// import "hardhat/console.sol";
 
 //    ___    __        __                _               ___                              __         _ 
 //   / _ |  / / ____  / /  ___   __ _   (_) __ __       / _ \  ____ ___   ___ ___   ___  / /_  ___  (_)
@@ -49,7 +45,7 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
  * functions have been added to mitigate the well-known issues around setting
  * allowances. See {IERC20Burnable-approve}.
  */
-contract TransmuterEth is Context, ReentrancyGuard {
+contract TransmuterEth is Context {
     using SafeMath for uint256;
     using SafeERC20 for IERC20Burnable;
     using Address for address;
@@ -57,7 +53,7 @@ contract TransmuterEth is Context, ReentrancyGuard {
     using VaultWithIndirection for VaultWithIndirection.List;
 
     address public constant ZERO_ADDRESS = address(0);
-    uint256 public TRANSMUTATION_PERIOD;
+    uint256 public transmutationPeriod;
 
     address public alToken;
     address public token;
@@ -110,7 +106,7 @@ contract TransmuterEth is Context, ReentrancyGuard {
     address public rewards;
 
     /// @dev A mapping of adapter addresses to keep track of vault adapters that have already been added
-    mapping(address => bool) public adapters;
+    mapping(YearnVaultAdapterWithIndirection => bool) public adapters;
 
     /// @dev A list of all of the vaults. The last element of the list is the vault that is currently being used for
     /// deposits and withdraws. VaultWithIndirections before the last element are considered inactive and are expected to be cleared.
@@ -118,6 +114,12 @@ contract TransmuterEth is Context, ReentrancyGuard {
 
     /// @dev make sure the contract is only initialized once.
     bool public initialized;
+
+    /// @dev mapping of user account to the last block they acted
+    mapping(address => uint256) public lastUserAction;
+
+    /// @dev number of blocks to delay between allowed user actions
+    uint256 public minUserActionDelay;
 
     event GovernanceUpdated(
         address governance
@@ -185,6 +187,10 @@ contract TransmuterEth is Context, ReentrancyGuard {
         uint256 plantableMargin
     );
 
+    event MinUserActionDelayUpdated(
+        uint256 minUserActionDelay
+    );
+
     event ActiveVaultUpdated(
         YearnVaultAdapterWithIndirection indexed adapter
     );
@@ -218,7 +224,9 @@ contract TransmuterEth is Context, ReentrancyGuard {
         governance = _governance;
         alToken = _alToken;
         token = _token;
-        TRANSMUTATION_PERIOD = 50;
+        transmutationPeriod = 500000;
+        minUserActionDelay = 1;
+        pause = true;
     }
 
     ///@return displays the user's share of the pooled alTokens.
@@ -271,14 +279,14 @@ contract TransmuterEth is Context, ReentrancyGuard {
             uint256 deltaTime = _currentBlock.sub(_lastDepositBlock);
 
             // distribute all if bigger than timeframe
-            if(deltaTime >= TRANSMUTATION_PERIOD) {
+            if(deltaTime >= transmutationPeriod) {
                 _toDistribute = _buffer;
             } else {
 
                 //needs to be bigger than 0 cuzz solidity no decimals
-                if(_buffer.mul(deltaTime) > TRANSMUTATION_PERIOD)
+                if(_buffer.mul(deltaTime) > transmutationPeriod)
                 {
-                    _toDistribute = _buffer.mul(deltaTime).div(TRANSMUTATION_PERIOD);
+                    _toDistribute = _buffer.mul(deltaTime).div(transmutationPeriod);
                 }
             }
 
@@ -318,18 +326,29 @@ contract TransmuterEth is Context, ReentrancyGuard {
         _;
     }
 
-    ///@dev set the TRANSMUTATION_PERIOD variable
+    /// @dev checks that the block delay since a user's last action is longer than the minium delay
+    ///
+    modifier ensureUserActionDelay() {
+        require(block.number.sub(lastUserAction[msg.sender]) >= minUserActionDelay, "action delay not met");
+        lastUserAction[msg.sender] = block.number;
+        _;
+    }
+
+    ///@dev set the transmutationPeriod variable
     ///
     /// sets the length (in blocks) of one full distribution phase
     function setTransmutationPeriod(uint256 newTransmutationPeriod) public onlyGov() {
-        TRANSMUTATION_PERIOD = newTransmutationPeriod;
-        emit TransmuterPeriodUpdated(TRANSMUTATION_PERIOD);
+        transmutationPeriod = newTransmutationPeriod;
+        emit TransmuterPeriodUpdated(transmutationPeriod);
     }
 
     ///@dev claims the base token after it has been transmuted
     ///
     ///This function reverts if there is no realisedToken balance
-    function claim(bool asEth) public nonReentrant() noContractAllowed() {
+    function claim(bool asEth) 
+        public 
+        noContractAllowed() 
+    {
         address sender = msg.sender;
         require(realisedTokens[sender] > 0);
         uint256 value = realisedTokens[sender];
@@ -349,7 +368,11 @@ contract TransmuterEth is Context, ReentrancyGuard {
     /// This function reverts if you try to draw more tokens than you deposited
     ///
     ///@param amount the amount of alTokens to unstake
-    function unstake(uint256 amount) public noContractAllowed() updateAccount(msg.sender) {
+    function unstake(uint256 amount) 
+        public 
+        noContractAllowed() 
+        updateAccount(msg.sender) 
+    {
         // by calling this function before transmuting you forfeit your gained allocation
         address sender = msg.sender;
         require(depositedAlTokens[sender] >= amount,"Transmuter: unstake amount exceeds deposited amount");
@@ -364,6 +387,7 @@ contract TransmuterEth is Context, ReentrancyGuard {
     function stake(uint256 amount)
         public
         noContractAllowed()
+        ensureUserActionDelay()
         runPhasedDistribution()
         updateAccount(msg.sender)
         checkIfNewUser()
@@ -383,7 +407,13 @@ contract TransmuterEth is Context, ReentrancyGuard {
     /// once the alToken has been converted, it is burned, and the base token becomes realisedTokens which can be recieved using claim()    
     ///
     /// reverts if there are no pendingdivs or tokensInBucket
-    function transmute() public noContractAllowed() runPhasedDistribution() updateAccount(msg.sender) {
+    function transmute()
+        public 
+        noContractAllowed() 
+        ensureUserActionDelay() 
+        runPhasedDistribution() 
+        updateAccount(msg.sender) 
+    {
         address sender = msg.sender;
         uint256 pendingz = tokensInBucket[sender];
         uint256 diff;
@@ -427,8 +457,8 @@ contract TransmuterEth is Context, ReentrancyGuard {
     /// @param toTransmute address of the account you will force transmute.
     function forceTransmute(address toTransmute)
         public
-        nonReentrant
         noContractAllowed()
+        ensureUserActionDelay()
         runPhasedDistribution()
         updateAccount(msg.sender)
         updateAccount(toTransmute)
@@ -553,8 +583,8 @@ contract TransmuterEth is Context, ReentrancyGuard {
         )
     {
         uint256 _depositedAl = depositedAlTokens[user];
-        uint256 _toDistribute = buffer.mul(block.number.sub(lastDepositBlock)).div(TRANSMUTATION_PERIOD);
-        if(block.number.sub(lastDepositBlock) > TRANSMUTATION_PERIOD){
+        uint256 _toDistribute = buffer.mul(block.number.sub(lastDepositBlock)).div(transmutationPeriod);
+        if(block.number.sub(lastDepositBlock) > transmutationPeriod){
             _toDistribute = buffer;
         }
         uint256 _pendingdivs = _toDistribute.mul(depositedAlTokens[user]).div(totalSupplyAltokens);
@@ -583,8 +613,8 @@ contract TransmuterEth is Context, ReentrancyGuard {
         address[] memory _theUserList = new address[](delta); //user
         uint256[] memory _theUserData = new uint256[](delta * 2); //deposited-bucket
         uint256 y = 0;
-        uint256 _toDistribute = buffer.mul(block.number.sub(lastDepositBlock)).div(TRANSMUTATION_PERIOD);
-        if(block.number.sub(lastDepositBlock) > TRANSMUTATION_PERIOD){
+        uint256 _toDistribute = buffer.mul(block.number.sub(lastDepositBlock)).div(transmutationPeriod);
+        if(block.number.sub(lastDepositBlock) > transmutationPeriod){
             _toDistribute = buffer;
         }
         for (uint256 x = 0; x < delta; x += 1) {
@@ -608,7 +638,7 @@ contract TransmuterEth is Context, ReentrancyGuard {
     function bufferInfo() public view returns (uint256 _toDistribute, uint256 _deltaBlocks, uint256 _buffer){
         _deltaBlocks = block.number.sub(lastDepositBlock);
         _buffer = buffer; 
-        _toDistribute = _buffer.mul(_deltaBlocks).div(TRANSMUTATION_PERIOD);
+        _toDistribute = _buffer.mul(_deltaBlocks).div(transmutationPeriod);
     }
 
     /// @dev Sets the pending governance.
@@ -689,8 +719,8 @@ contract TransmuterEth is Context, ReentrancyGuard {
     function _updateActiveVault(YearnVaultAdapterWithIndirection _adapter) internal {
         require(_adapter != YearnVaultAdapterWithIndirection(ZERO_ADDRESS), "Transmuter: active vault address cannot be 0x0.");
         require(address(_adapter.token()) == token, "Transmuter.vault: token mismatch.");
-        require(!adapters[address(_adapter)], "Adapter already in use");
-        adapters[address(_adapter)] = true;
+        require(!adapters[_adapter], "Adapter already in use");
+        adapters[_adapter] = true;
         _vaults.push(VaultWithIndirection.Data({
             adapter: _adapter,
             totalDeposited: 0
@@ -742,7 +772,7 @@ contract TransmuterEth is Context, ReentrancyGuard {
     /// @dev Recalls all planted funds from a target vault
     ///
     /// @param _vaultId the id of the vault from which to recall funds
-    function recallAllFundsFromVault(uint256 _vaultId) external noContractAllowed() {
+    function recallAllFundsFromVault(uint256 _vaultId) external {
         require(pause && (msg.sender == governance || msg.sender == sentinel), "Transmuter: not paused, or not governance or sentinel");
         _recallAllFundsFromVault(_vaultId);
     }
@@ -760,7 +790,7 @@ contract TransmuterEth is Context, ReentrancyGuard {
     ///
     /// @param _vaultId the id of the vault from which to recall funds
     /// @param _amount the amount of funds to recall
-    function recallFundsFromVault(uint256 _vaultId, uint256 _amount) external noContractAllowed() {
+    function recallFundsFromVault(uint256 _vaultId, uint256 _amount) external {
         require(pause && (msg.sender == governance || msg.sender == sentinel), "Transmuter: not paused, or not governance or sentinel");
         _recallFundsFromVault(_vaultId, _amount);
     }
@@ -846,6 +876,16 @@ contract TransmuterEth is Context, ReentrancyGuard {
     function setPlantableMargin(uint256 _plantableMargin) external onlyGov() {
         plantableMargin = _plantableMargin;
         emit PlantableMarginUpdated(_plantableMargin);
+    }
+
+    /// @dev Sets the minUserActionDelay 
+    ///
+    /// This function reverts if the caller is not the current governance.
+    ///
+    /// @param _minUserActionDelay the new min user action delay.
+    function setMinUserActionDelay(uint256 _minUserActionDelay) external onlyGov() {
+        minUserActionDelay = _minUserActionDelay;
+        emit MinUserActionDelayUpdated(_minUserActionDelay);
     }
 
     /// @dev Sets if the contract should enter emergency exit mode.
