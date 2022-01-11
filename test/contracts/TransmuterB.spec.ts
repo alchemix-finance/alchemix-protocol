@@ -8,12 +8,9 @@ import { Alchemist } from "../../types/Alchemist";
 import { VaultAdapterMockWithIndirection } from "../../types/VaultAdapterMockWithIndirection";
 
 import { Erc20Mock } from "../../types/Erc20Mock";
-import { getAddress, parseEther, formatEther } from "ethers/lib/utils";
+import { parseEther } from "ethers/lib/utils";
 import { MAXIMUM_U256, ZERO_ADDRESS, mineBlocks } from "../utils/helpers";
 import { TransmuterB } from "../../types/TransmuterB";
-import { waitForTxConfirmation } from "../../utils/txUtils";
-import { SSL_OP_EPHEMERAL_RSA } from "constants";
-import { Transmuter } from "../../types/Transmuter";
 
 chai.use(solidity);
 chai.use(chaiSubset);
@@ -114,6 +111,7 @@ describe("TransmuterB", () => {
     await alchemist.connect(governance).setRewards(await rewards.getAddress());
     await alchemist.connect(governance).setHarvestFee(harvestFee);
     await transmuter.connect(governance).setWhitelist(mockAlchemistAddress, true);
+    await transmuter.connect(governance).setPause(false);
 
     adapter = (await VaultAdapterMockFactory.connect(deployer).deploy(
       token.address
@@ -809,6 +807,7 @@ describe("TransmuterB", () => {
         await transmuter.connect(governance).setPause(true);
         expect(transmuter.connect(minter).recallAllFundsFromVault(0))
           .revertedWith("Transmuter: not paused, or not governance or sentinel")
+        await transmuter.connect(governance).setPause(false);
       });
 
       it("recalls funds from active vault", async () => {
@@ -822,6 +821,7 @@ describe("TransmuterB", () => {
         
         expect(transmuterPostRecallBal).equal(transmuterPreRecallBal.add(parseEther("50")));
         expect(vaultPostRecallBal).equal(0);
+        await transmuter.connect(governance).setPause(false);
       })
 
       it("recalls funds from any non-active vault", async () => {
@@ -839,6 +839,7 @@ describe("TransmuterB", () => {
         
         expect(transmuterPostRecallBal).equal(transmuterPreRecallBal.add(parseEther("50")));
         expect(vaultPostRecallBal).equal(0);
+        await transmuter.connect(governance).setPause(false);
       })
     })
 
@@ -864,6 +865,7 @@ describe("TransmuterB", () => {
         await transmuter.connect(governance).setPause(true);
         expect(transmuter.connect(minter).recallAllFundsFromVault(0))
           .revertedWith("Transmuter: not paused, or not governance or sentinel")
+        await transmuter.connect(governance).setPause(false);
       });
 
       it("recalls funds from active vault", async () => {
@@ -877,6 +879,7 @@ describe("TransmuterB", () => {
         
         expect(transmuterPostRecallBal).equal(transmuterPreRecallBal.add(recallAmt));
         expect(vaultPostRecallBal).equal(distributeAmt.sub(plantableThreshold).sub(recallAmt));
+        await transmuter.connect(governance).setPause(false);
       })
 
       it("recalls funds from any non-active vault", async () => {
@@ -894,6 +897,7 @@ describe("TransmuterB", () => {
         
         expect(transmuterPostRecallBal).equal(transmuterPreRecallBal.add(recallAmt));
         expect(vaultPostRecallBal).equal(distributeAmt.sub(plantableThreshold).sub(recallAmt));
+        await transmuter.connect(governance).setPause(false);
       })
     })
   })
@@ -945,6 +949,7 @@ describe("TransmuterB", () => {
       await newTransmuter.connect(governance).setRewards(await rewards.getAddress());
       await newTransmuter.connect(governance).initialize(newTransVaultAdaptor.address);
       await newTransmuter.connect(governance).setWhitelist(transmuter.address, true);
+      await newTransmuter.connect(governance).setPause(false);
       await transmuter.connect(governance).setTransmutationPeriod(transmutationPeriod);
       await transmuter.connect(depositor).stake(stakeAmt);
       await transmuter.connect(governance).setPlantableThreshold(plantableThreshold);
@@ -970,6 +975,7 @@ describe("TransmuterB", () => {
       await transmuter.connect(governance).setPause(true);
       expect(transmuter.connect(governance).migrateFunds(newTransmuter.address))
         .revertedWith("not enough funds to service stakes");
+      await transmuter.connect(governance).setPause(false);
     })
 
     it("sends all available funds to the new transmuter", async () => {
@@ -984,6 +990,7 @@ describe("TransmuterB", () => {
       let amountMigrated = distributeAmt.sub(stakeAmt);
       let newTransmuterPostMigrateBal = await token.balanceOf(newTransmuter.address);
       expect(newTransmuterPostMigrateBal).equal(newTransmuterPreMigrateBal.add(amountMigrated))
+      await transmuter.connect(governance).setPause(false);
     })
 
   });

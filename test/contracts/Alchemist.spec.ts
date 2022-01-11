@@ -5,7 +5,6 @@ import { ethers } from "hardhat";
 import { BigNumber, BigNumberish, ContractFactory, Signer, utils } from "ethers";
 import { Transmuter } from "../../types/Transmuter";
 import { Alchemist } from "../../types/Alchemist";
-import { StakingPools } from "../../types/StakingPools";
 import { AlToken } from "../../types/AlToken";
 import { Erc20Mock } from "../../types/Erc20Mock";
 import { MAXIMUM_U256, ZERO_ADDRESS } from "../utils/helpers";
