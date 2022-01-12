@@ -5,12 +5,22 @@ import { ethers } from "hardhat";
 import { ContractFactory, Signer, BigNumber, utils } from "ethers";
 import { AlToken } from "../../types/AlToken";
 import { Alchemist } from "../../types/Alchemist";
-import { VaultAdapterMockWithIndirection } from "../../types/VaultAdapterMockWithIndirection";
-
-import { Erc20Mock } from "../../types/Erc20Mock";
+import { YakStrategyAdapter } from "../../types/YakStrategyAdapter";
+import { IYakStrategy } from "../../types/IYakStrategy";
+import { IBridgeToken } from "../../types/IBridgeToken";
 import { parseEther } from "ethers/lib/utils";
-import { MAXIMUM_U256, ZERO_ADDRESS, mineBlocks } from "../utils/helpers";
-import { TransmuterB } from "../../types/TransmuterB";
+import {
+  MAXIMUM_U256,
+  ZERO_ADDRESS,
+  mineBlocks,
+  AVALANCHE_NODE_URL,
+  BLOCK_NUMBER,
+  YAK_AAVE_DAI_E_ADDRESS,
+  DAI_E_TOKEN_ADDRESS
+} from "../utils/helpers";
+import { mintToken } from "../utils/ethereum";
+import { TransmuterYak } from "../../types/TransmuterYak";
+
 
 chai.use(solidity);
 chai.use(chaiSubset);
@@ -18,12 +28,11 @@ chai.use(chaiSubset);
 const { expect } = chai;
 
 let AlchemistFactory: ContractFactory;
-let TransmuterBFactory: ContractFactory;
-let ERC20MockFactory: ContractFactory;
+let TransmuterYakFactory: ContractFactory;
 let AlUSDFactory: ContractFactory;
-let VaultAdapterMockFactory: ContractFactory;
+let YakStrategyAdapterFactory: ContractFactory;
 
-describe("TransmuterB", () => {
+describe("TransmuterYak", () => {
   let deployer: Signer;
   let depositor: Signer;
   let signers: Signer[];
@@ -34,11 +43,12 @@ describe("TransmuterB", () => {
   let sentinel: Signer;
   let user: Signer;
   let mockAlchemist: Signer;
-  let token: Erc20Mock;
-  let transmuter: TransmuterB;
-  let adapter: VaultAdapterMockWithIndirection;
-  let transVaultAdaptor: VaultAdapterMockWithIndirection;
+  let token: IBridgeToken;
+  let transmuter: TransmuterYak;
+  let adapter: YakStrategyAdapter;
+  let transVaultAdaptor: YakStrategyAdapter;
   let alUsd: AlToken;
+  let vault: IYakStrategy;
   let harvestFee = 1000;
   let ceilingAmt = utils.parseEther("10000000");
   let collateralizationLimit = "2000000000000000000";
@@ -49,13 +59,23 @@ describe("TransmuterB", () => {
   let keeprStates;
 
   before(async () => {
-    TransmuterBFactory = await ethers.getContractFactory("TransmuterB");
-    ERC20MockFactory = await ethers.getContractFactory("ERC20Mock");
+
+    await ethers.provider.send(
+      "hardhat_reset",
+      [
+        {
+          forking: { 
+            jsonRpcUrl: AVALANCHE_NODE_URL,
+            blockNumber: BLOCK_NUMBER, 
+          }, 
+        },
+      ],
+    );
+        
+    TransmuterYakFactory = await ethers.getContractFactory("TransmuterYak");
     AlUSDFactory = await ethers.getContractFactory("AlToken");
     AlchemistFactory = await ethers.getContractFactory("Alchemist");
-    VaultAdapterMockFactory = await ethers.getContractFactory(
-      "VaultAdapterMockWithIndirection"
-    );
+    YakStrategyAdapterFactory = await ethers.getContractFactory("YakStrategyAdapter");
   });
 
   beforeEach(async () => {
@@ -78,11 +98,9 @@ describe("TransmuterB", () => {
     keeprs = [await deployer.getAddress()];
     keeprStates = [true]
 
-    token = (await ERC20MockFactory.connect(deployer).deploy(
-      "Mock DAI",
-      "DAI",
-      18
-    )) as Erc20Mock;
+    token = (await ethers.getContractAt("IBridgeToken", DAI_E_TOKEN_ADDRESS)) as IBridgeToken;
+
+    vault = (await ethers.getContractAt("IYakStrategy", YAK_AAVE_DAI_E_ADDRESS)) as IYakStrategy;
 
     alUsd = (await AlUSDFactory.connect(deployer).deploy()) as AlToken;
 
@@ -94,14 +112,15 @@ describe("TransmuterB", () => {
       await governance.getAddress(),
       await sentinel.getAddress()
     )) as Alchemist;
-    transmuter = (await TransmuterBFactory.connect(deployer).deploy(
+    transmuter = (await TransmuterYakFactory.connect(deployer).deploy(
       alUsd.address,
       token.address,
       await governance.getAddress()
-    )) as TransmuterB;
-    transVaultAdaptor = (await VaultAdapterMockFactory.connect(deployer).deploy(
-        token.address
-      )) as VaultAdapterMockWithIndirection;
+    )) as TransmuterYak;
+    transVaultAdaptor = (await YakStrategyAdapterFactory.connect(deployer).deploy(
+      vault.address,
+      alchemist.address
+    )) as YakStrategyAdapter;
     await transmuter.connect(governance).setKeepers(keeprs, keeprStates);
     await transmuter.connect(governance).setRewards(await rewards.getAddress())
     await transmuter.connect(governance).initialize(transVaultAdaptor.address);
@@ -113,20 +132,25 @@ describe("TransmuterB", () => {
     await transmuter.connect(governance).setWhitelist(mockAlchemistAddress, true);
     await transmuter.connect(governance).setPause(false);
 
-    adapter = (await VaultAdapterMockFactory.connect(deployer).deploy(
-      token.address
-    )) as VaultAdapterMockWithIndirection;
+    adapter = (await YakStrategyAdapterFactory.connect(deployer).deploy(
+      vault.address,
+      alchemist.address
+    )) as YakStrategyAdapter;
     await alchemist.connect(governance).initialize(adapter.address);
     await alchemist
       .connect(governance)
       .setCollateralizationLimit(collateralizationLimit);
     await alUsd.connect(deployer).setWhitelist(alchemist.address, true);
     await alUsd.connect(deployer).setCeiling(alchemist.address, ceilingAmt);
-    await token.mint(mockAlchemistAddress, utils.parseEther("10000"));
+
+    await mintToken(token, mockAlchemistAddress, utils.parseEther("10000"));
+    // await token.mint(mockAlchemistAddress, utils.parseEther("10000"));
     await token.connect(mockAlchemist).approve(transmuter.address, MAXIMUM_U256);
 
-    await token.mint(await depositor.getAddress(), utils.parseEther("20000"));
-    await token.mint(await minter.getAddress(), utils.parseEther("20000"));
+    await mintToken(token, await depositor.getAddress(), utils.parseEther("20000"));
+    await mintToken(token, await minter.getAddress(), utils.parseEther("20000"));
+    // await token.mint(await depositor.getAddress(), utils.parseEther("20000"));
+    // await token.mint(await minter.getAddress(), utils.parseEther("20000"));
     await token.connect(depositor).approve(transmuter.address, MAXIMUM_U256);
     await alUsd.connect(depositor).approve(transmuter.address, MAXIMUM_U256);
     await token.connect(depositor).approve(alchemist.address, MAXIMUM_U256);
@@ -200,14 +224,16 @@ describe("TransmuterB", () => {
 
     beforeEach(async () => {
       await transmuter.connect(governance).setTransmutationPeriod(transmutationPeriod);
-      await token.mint(await minter.getAddress(), utils.parseEther("20000"));
+      await mintToken(token, await minter.getAddress(), utils.parseEther("20000"));
+      // await token.mint(await minter.getAddress(), utils.parseEther("20000"));
       await token.connect(minter).approve(transmuter.address, MAXIMUM_U256);
       await alUsd.connect(minter).approve(transmuter.address, MAXIMUM_U256);
       await token.connect(minter).approve(alchemist.address, MAXIMUM_U256);
       await alUsd.connect(minter).approve(alchemist.address, MAXIMUM_U256);
       await alchemist.connect(minter).deposit(utils.parseEther("10000"));
       await alchemist.connect(minter).mint(utils.parseEther("5000"));
-      await token.mint(await rewards.getAddress(), utils.parseEther("20000"));
+      await mintToken(token, await rewards.getAddress(), utils.parseEther("20000"));
+      // await token.mint(await rewards.getAddress(), utils.parseEther("20000"));
       await token.connect(rewards).approve(transmuter.address, MAXIMUM_U256);
       await alUsd.connect(rewards).approve(transmuter.address, MAXIMUM_U256);
       await token.connect(rewards).approve(alchemist.address, MAXIMUM_U256);
@@ -340,10 +366,12 @@ describe("TransmuterB", () => {
       await token.connect(user).approve(alchemist.address, MAXIMUM_U256);
       await alUsd.connect(minter).approve(alchemist.address, MAXIMUM_U256);
       await alUsd.connect(user).approve(alchemist.address, MAXIMUM_U256);
-      await token.mint(await minter.getAddress(), utils.parseEther("20000"));
+      await mintToken(token, await minter.getAddress(), utils.parseEther("20000"));
+      // await token.mint(await minter.getAddress(), utils.parseEther("20000"));
       await alchemist.connect(minter).deposit(utils.parseEther("10000"));
       await alchemist.connect(minter).mint(utils.parseEther("5000"));
-      await token.mint(await user.getAddress(), utils.parseEther("20000"));
+      await mintToken(token, await user.getAddress(), utils.parseEther("20000"));
+      // await token.mint(await user.getAddress(), utils.parseEther("20000"));
       await alchemist.connect(user).deposit(utils.parseEther("10000"));
       await alchemist.connect(user).mint(utils.parseEther("5000"));
 
@@ -528,7 +556,8 @@ describe("TransmuterB", () => {
 
     beforeEach(async () => {
       transmuter.connect(governance).setTransmutationPeriod(10);
-      await token.mint(await minter.getAddress(), utils.parseEther("20000"));
+      await mintToken(token, await minter.getAddress(), utils.parseEther("20000"));
+      // await token.mint(await minter.getAddress(), utils.parseEther("20000"));
       await token.connect(minter).approve(transmuter.address, MAXIMUM_U256);
       await alUsd.connect(minter).approve(transmuter.address, MAXIMUM_U256);
       await token.connect(minter).approve(alchemist.address, MAXIMUM_U256);
@@ -828,9 +857,7 @@ describe("TransmuterB", () => {
         await transmuter.connect(sentinel).setPause(true);
         let transmuterPreRecallBal = await token.balanceOf(transmuter.address);
 
-        let newVault = (await VaultAdapterMockFactory.connect(deployer).deploy(
-          token.address
-        )) as VaultAdapterMockWithIndirection;
+        let newVault = (await ethers.getContractAt("IYakStrategy", YAK_AAVE_DAI_E_ADDRESS)) as IYakStrategy;
         await transmuter.connect(governance).migrate(newVault.address);
         await transmuter.connect(sentinel).recallAllFundsFromVault(0);
 
@@ -886,9 +913,7 @@ describe("TransmuterB", () => {
         await transmuter.connect(sentinel).setPause(true);
         let transmuterPreRecallBal = await token.balanceOf(transmuter.address);
 
-        let newVault = (await VaultAdapterMockFactory.connect(deployer).deploy(
-          token.address
-        )) as VaultAdapterMockWithIndirection;
+        let newVault = (await ethers.getContractAt("IYakStrategy", YAK_AAVE_DAI_E_ADDRESS)) as IYakStrategy;
         await transmuter.connect(governance).migrate(newVault.address);
         await transmuter.connect(sentinel).recallFundsFromVault(0, recallAmt);
 
@@ -932,18 +957,19 @@ describe("TransmuterB", () => {
     let plantableThreshold = parseEther("20");
     let stakeAmt = parseEther("50");
     let distributeAmt = parseEther("100");
-    let newTransmuter: TransmuterB;
-    let newTransVaultAdaptor: VaultAdapterMockWithIndirection;
+    let newTransmuter: TransmuterYak;
+    let newTransVaultAdaptor: YakStrategyAdapter;
 
     beforeEach(async () => {
-      newTransmuter = (await TransmuterBFactory.connect(deployer).deploy(
+      newTransmuter = (await TransmuterYakFactory.connect(deployer).deploy(
         alUsd.address,
         token.address,
         await governance.getAddress()
-      )) as TransmuterB;
-      newTransVaultAdaptor = (await VaultAdapterMockFactory.connect(deployer).deploy(
-        token.address
-      )) as VaultAdapterMockWithIndirection;
+      )) as TransmuterYak;
+      newTransVaultAdaptor = (await YakStrategyAdapterFactory.connect(deployer).deploy(
+        vault.address,
+        alchemist.address
+      )) as YakStrategyAdapter;
       await transmuter.connect(governance).setRewards(await rewards.getAddress());
       await newTransmuter.connect(governance).setKeepers(keeprs, keeprStates);
       await newTransmuter.connect(governance).setRewards(await rewards.getAddress());

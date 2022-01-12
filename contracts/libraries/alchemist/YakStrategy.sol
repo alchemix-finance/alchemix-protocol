@@ -7,20 +7,20 @@ import {Math} from "@openzeppelin/contracts/math/Math.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 import {SafeMath} from "@openzeppelin/contracts/math/SafeMath.sol";
 import {IDetailedERC20} from "../../interfaces/IDetailedERC20.sol";
-import {YearnVaultAdapterWithIndirection} from "../../adapters/YearnVaultAdapterWithIndirection.sol";
+import {YakStrategyAdapter} from "../../adapters/YakStrategyAdapter.sol";
 import "hardhat/console.sol";
 
 /// @title Pool
 ///
 /// @dev A library which provides the Vault data struct and associated functions.
-library VaultWithIndirection {
-  using VaultWithIndirection for Data;
-  using VaultWithIndirection for List;
+library YakStrategy {
+  using YakStrategy for Data;
+  using YakStrategy for List;
   using SafeERC20 for IDetailedERC20;
   using SafeMath for uint256;
 
   struct Data {
-    YearnVaultAdapterWithIndirection adapter;
+    YakStrategyAdapter adapter;
     uint256 totalDeposited;
   }
 

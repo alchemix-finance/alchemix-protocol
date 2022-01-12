@@ -1,5 +1,13 @@
 import {BigNumber, BigNumberish, ethers} from "ethers";
 import * as moment from "moment";
+require('dotenv').config()
+
+export const AVALANCHE_NODE_URL = process.env.AVALANCHE_MAINNET_URL;
+export const BLOCK_NUMBER = parseInt(process.env.MAINNET_BLOCK_NUMBER || '') || 9441313;
+
+export const YAK_AAVE_DAI_E_ADDRESS = "0xA914FEb3C4B580fF6933CEa4f39988Cd10Aa2985";
+export const DAI_E_TOKEN_ADDRESS = "0xd586E7F844cEa2F87f50152665BCbc2C279D8d70";
+export const YAK_USDT_E_ADDRESS = "0x07B0E11D80Ccf75CB390c9Be6c27f329c119095A";
 
 export const ONE = BigNumber.from(1);
 export const MAXIMUM_U32 = ONE.shl(31);

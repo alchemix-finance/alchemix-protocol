@@ -5,8 +5,8 @@ import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
 import "./interfaces/IERC20Burnable.sol";
-import {YearnVaultAdapterWithIndirection} from "./adapters/YearnVaultAdapterWithIndirection.sol";
-import {VaultWithIndirection} from "./libraries/alchemist/VaultWithIndirection.sol";
+import {YakStrategyAdapter} from "./adapters/YakStrategyAdapter.sol";
+import {YakStrategy} from "./libraries/alchemist/YakStrategy.sol";
 import {ITransmuter} from "./interfaces/ITransmuter.sol";
 
 //    ___    __        __                _               ___                              __         _ 
@@ -44,12 +44,12 @@ import {ITransmuter} from "./interfaces/ITransmuter.sol";
  * functions have been added to mitigate the well-known issues around setting
  * allowances. See {IERC20Burnable-approve}.
  */
-contract TransmuterB is Context {
+contract TransmuterYak is Context {
     using SafeMath for uint256;
     using SafeERC20 for IERC20Burnable;
     using Address for address;
-    using VaultWithIndirection for VaultWithIndirection.Data;
-    using VaultWithIndirection for VaultWithIndirection.List;
+    using YakStrategy for YakStrategy.Data;
+    using YakStrategy for YakStrategy.List;
 
     address public constant ZERO_ADDRESS = address(0);
     uint256 public transmutationPeriod;
@@ -105,11 +105,11 @@ contract TransmuterB is Context {
     address public rewards;
 
     /// @dev A mapping of adapter addresses to keep track of vault adapters that have already been added
-    mapping(YearnVaultAdapterWithIndirection => bool) public adapters;
+    mapping(YakStrategyAdapter => bool) public adapters;
 
     /// @dev A list of all of the vaults. The last element of the list is the vault that is currently being used for
     /// deposits and withdraws. VaultWithIndirections before the last element are considered inactive and are expected to be cleared.
-    VaultWithIndirection.List private _vaults;
+    YakStrategy.List private _vaults;
 
     /// @dev make sure the contract is only initialized once.
     bool public initialized;
@@ -191,7 +191,7 @@ contract TransmuterB is Context {
     );
 
     event ActiveVaultUpdated(
-        YearnVaultAdapterWithIndirection indexed adapter
+        YakStrategyAdapter indexed adapter
     );
 
     event PauseUpdated(
@@ -688,7 +688,7 @@ contract TransmuterB is Context {
     /// This function checks that the transmuter and rewards have been set and sets up the active vault.
     ///
     /// @param _adapter the vault adapter of the active vault.
-    function initialize(YearnVaultAdapterWithIndirection _adapter) external onlyGov {
+    function initialize(YakStrategyAdapter _adapter) external onlyGov {
         require(!initialized, "Transmuter: already initialized");
         require(rewards != ZERO_ADDRESS, "Transmuter: cannot initialize rewards address to 0x0");
 
@@ -697,7 +697,7 @@ contract TransmuterB is Context {
         initialized = true;
     }
 
-    function migrate(YearnVaultAdapterWithIndirection _adapter) external onlyGov() {
+    function migrate(YakStrategyAdapter _adapter) external onlyGov() {
         _updateActiveVault(_adapter);
     }
 
@@ -707,12 +707,12 @@ contract TransmuterB is Context {
     /// is not the token that this contract defines as the parent asset, or if the contract has not yet been initialized.
     ///
     /// @param _adapter the adapter for the new active vault.
-    function _updateActiveVault(YearnVaultAdapterWithIndirection _adapter) internal {
-        require(_adapter != YearnVaultAdapterWithIndirection(ZERO_ADDRESS), "Transmuter: active vault address cannot be 0x0.");
+    function _updateActiveVault(YakStrategyAdapter _adapter) internal {
+        require(_adapter != YakStrategyAdapter(ZERO_ADDRESS), "Transmuter: active vault address cannot be 0x0.");
         require(address(_adapter.token()) == token, "Transmuter.vault: token mismatch.");
         require(!adapters[_adapter], "Adapter already in use");
         adapters[_adapter] = true;
-        _vaults.push(VaultWithIndirection.Data({
+        _vaults.push(YakStrategy.Data({
             adapter: _adapter,
             totalDeposited: 0
         }));
@@ -733,7 +733,7 @@ contract TransmuterB is Context {
     ///
     /// @return the vault adapter.
     function getVaultAdapter(uint256 _vaultId) external view returns (address) {
-        VaultWithIndirection.Data storage _vault = _vaults.get(_vaultId);
+        YakStrategy.Data storage _vault = _vaults.get(_vaultId);
         return address(_vault.adapter);
     }
 
@@ -743,7 +743,7 @@ contract TransmuterB is Context {
     ///
     /// @return the total amount of deposited tokens.
     function getVaultTotalDeposited(uint256 _vaultId) external view returns (uint256) {
-        VaultWithIndirection.Data storage _vault = _vaults.get(_vaultId);
+        YakStrategy.Data storage _vault = _vaults.get(_vaultId);
         return _vault.totalDeposited;
     }
 
@@ -772,7 +772,7 @@ contract TransmuterB is Context {
     ///
     /// @param _vaultId the id of the vault from which to recall funds
     function _recallAllFundsFromVault(uint256 _vaultId) internal {
-        VaultWithIndirection.Data storage _vault = _vaults.get(_vaultId);
+        YakStrategy.Data storage _vault = _vaults.get(_vaultId);
         (uint256 _withdrawnAmount, uint256 _decreasedValue) = _vault.withdrawAll(address(this));
         emit FundsRecalled(_vaultId, _withdrawnAmount, _decreasedValue);
     }
@@ -791,7 +791,7 @@ contract TransmuterB is Context {
     /// @param _vaultId the id of the vault from which to recall funds
     /// @param _amount the amount of funds to recall
     function _recallFundsFromVault(uint256 _vaultId, uint256 _amount) internal {
-        VaultWithIndirection.Data storage _vault = _vaults.get(_vaultId);
+        YakStrategy.Data storage _vault = _vaults.get(_vaultId);
         (uint256 _withdrawnAmount, uint256 _decreasedValue) = _vault.withdraw(address(this), _amount);
         emit FundsRecalled(_vaultId, _withdrawnAmount, _decreasedValue);
     }
@@ -814,7 +814,7 @@ contract TransmuterB is Context {
         if (bal > plantableThreshold.add(marginVal)) {
             uint256 plantAmt = bal - plantableThreshold;
             // if total funds above threshold, send funds to vault
-            VaultWithIndirection.Data storage _activeVault = _vaults.last();
+            YakStrategy.Data storage _activeVault = _vaults.last();
             _activeVault.deposit(plantAmt);
         } else if (bal < plantableThreshold.sub(marginVal)) {
             // if total funds below threshold, recall funds from vault
@@ -830,7 +830,7 @@ contract TransmuterB is Context {
     ///
     /// @param _recallAmt the amount to harvest from the active vault
     function _recallExcessFundsFromActiveVault(uint256 _recallAmt) internal {
-        VaultWithIndirection.Data storage _activeVault = _vaults.last();
+        YakStrategy.Data storage _activeVault = _vaults.last();
         uint256 activeVaultVal = _activeVault.totalValue();
         if (activeVaultVal < _recallAmt) {
             _recallAmt = activeVaultVal;
@@ -901,7 +901,7 @@ contract TransmuterB is Context {
     /// @return the amount of funds that were harvested from the vault.
     function harvest(uint256 _vaultId) external onlyKeeper() returns (uint256, uint256) {
 
-        VaultWithIndirection.Data storage _vault = _vaults.get(_vaultId);
+        YakStrategy.Data storage _vault = _vaults.get(_vaultId);
 
         (uint256 _harvestedAmount, uint256 _decreasedValue) = _vault.harvest(rewards);
 

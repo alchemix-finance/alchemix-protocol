@@ -2,6 +2,9 @@
 
 import BigNum from 'bignumber.js';
 import { ethers } from "hardhat";
+import { BigNumber } from "ethers";
+import { IBridgeToken } from "../../types/IBridgeToken";
+const hre = require("hardhat");
 
 export function address(n) {
   return `0x${n.toString(16).padStart(40, '0')}`;
@@ -58,6 +61,23 @@ export function keccak256(values) {
   return ethers.utils.keccak256(values);
 }
 
+
+export async function mintToken(token: IBridgeToken, address: string, amount: BigNumber) {
+  const accountToInpersonate = "0xd8c8edf5e23a4f69aee60747294482e941dcbea0";
+
+  await hre.network.provider.request({
+    method: "hardhat_impersonateAccount",
+    params: [accountToInpersonate],
+  });
+
+  const tokenSigner = await ethers.getSigner(accountToInpersonate);
+  await token.connect(tokenSigner).transfer(address, amount);
+
+  await hre.network.provider.request({
+    method: "hardhat_stopImpersonatingAccount",
+    params: [accountToInpersonate],
+  });
+}
 // export function unlockedAccounts() {
 //   let provider = web3.currentProvider;
 //   if (provider._providers)

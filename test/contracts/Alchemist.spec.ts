@@ -2,17 +2,25 @@ import chai from "chai";
 import chaiSubset from "chai-subset";
 import { solidity } from "ethereum-waffle";
 import { ethers } from "hardhat";
-import { BigNumber, BigNumberish, ContractFactory, Signer, utils } from "ethers";
-import { Transmuter } from "../../types/Transmuter";
+import { BigNumber, BigNumberish, ContractFactory, Signer, utils, Contract } from "ethers";
+import { TransmuterYak } from "../../types/TransmuterYak";
 import { Alchemist } from "../../types/Alchemist";
 import { AlToken } from "../../types/AlToken";
-import { Erc20Mock } from "../../types/Erc20Mock";
-import { MAXIMUM_U256, ZERO_ADDRESS } from "../utils/helpers";
-import { VaultAdapterMock } from "../../types/VaultAdapterMock";
-import { YearnVaultAdapter } from "../../types/YearnVaultAdapter";
-import { YearnVaultMock } from "../../types/YearnVaultMock";
-import { YearnControllerMock } from "../../types/YearnControllerMock";
+import { YakStrategyAdapter } from "../../types/YakStrategyAdapter";
+import { IBridgeToken } from "../../types/IBridgeToken";
+import { IYakStrategy } from "../../types/IYakStrategy";
+import {
+  ZERO_ADDRESS,
+  AVALANCHE_NODE_URL,
+  BLOCK_NUMBER,
+  YAK_AAVE_DAI_E_ADDRESS,
+  DAI_E_TOKEN_ADDRESS,
+  YAK_USDT_E_ADDRESS
+} from "../utils/helpers";
+import { mintToken } from "../utils/ethereum";
+
 import { min } from "moment";
+
 const {parseEther, formatEther} = utils;
 
 chai.use(solidity);
@@ -20,29 +28,32 @@ chai.use(chaiSubset);
 
 const { expect } = chai;
 
+
 let AlchemistFactory: ContractFactory;
 let AlUSDFactory: ContractFactory;
-let ERC20MockFactory: ContractFactory;
-let VaultAdapterMockFactory: ContractFactory;
 let TransmuterFactory: ContractFactory;
-let YearnVaultAdapterFactory: ContractFactory;
-let YearnVaultMockFactory: ContractFactory;
-let YearnControllerMockFactory: ContractFactory;
+let YakStrategyAdapterFactory: ContractFactory;
 
 describe("Alchemist", () => {
   let signers: Signer[];
 
   before(async () => {
-    AlchemistFactory = await ethers.getContractFactory("Alchemist");
-    TransmuterFactory = await ethers.getContractFactory("Transmuter");
-    AlUSDFactory = await ethers.getContractFactory("AlToken");
-    ERC20MockFactory = await ethers.getContractFactory("ERC20Mock");
-    VaultAdapterMockFactory = await ethers.getContractFactory(
-      "VaultAdapterMock"
+    await ethers.provider.send(
+      "hardhat_reset",
+      [
+        {
+          forking: { 
+            jsonRpcUrl: AVALANCHE_NODE_URL,
+            blockNumber: BLOCK_NUMBER, 
+          }, 
+        },
+      ],
     );
-    YearnVaultAdapterFactory = await ethers.getContractFactory("YearnVaultAdapter");
-    YearnVaultMockFactory = await ethers.getContractFactory("YearnVaultMock");
-    YearnControllerMockFactory = await ethers.getContractFactory("YearnControllerMock");
+
+    AlchemistFactory = await ethers.getContractFactory("Alchemist");
+    TransmuterFactory = await ethers.getContractFactory("TransmuterYak");
+    AlUSDFactory = await ethers.getContractFactory("AlToken");
+    YakStrategyAdapterFactory = await ethers.getContractFactory("YakStrategyAdapter");
   });
 
   beforeEach(async () => {
@@ -53,26 +64,17 @@ describe("Alchemist", () => {
     let deployer: Signer;
     let governance: Signer;
     let sentinel: Signer;
-    let token: Erc20Mock;
+    let token: IBridgeToken;
     let alUsd: AlToken;
     let alchemist: Alchemist;
     
     beforeEach(async () => {
       [deployer, governance, sentinel, ...signers] = signers;
 
-      token = (await ERC20MockFactory.connect(deployer).deploy(
-        "Mock DAI",
-        "DAI",
-        18
-      )) as Erc20Mock;
+      token = (await ethers.getContractAt("IBridgeToken", DAI_E_TOKEN_ADDRESS)) as IBridgeToken;
 
       alUsd = (await AlUSDFactory.connect(deployer).deploy()) as AlToken;
 
-      // alchemist = await AlchemistFactory
-      //   .connect(deployer)
-      //   .deploy(
-      //     token.address, alUsd.address, await governance.getAddress(), await sentinel.getAddress()
-      //   ) as Alchemist;
     });
 
     // it("copies the decimals of the base asset", async () => {
@@ -100,7 +102,7 @@ describe("Alchemist", () => {
     let rewards: Signer;
     let sentinel: Signer;
     let transmuter: Signer;
-    let token: Erc20Mock;
+    let token: IBridgeToken;
     let alUsd: AlToken;
     let alchemist: Alchemist;
 
@@ -116,11 +118,7 @@ describe("Alchemist", () => {
         ...signers
       ] = signers;
 
-      token = (await ERC20MockFactory.connect(deployer).deploy(
-        "Mock DAI",
-        "DAI",
-        18
-      )) as Erc20Mock;
+      token = (await ethers.getContractAt("IDetailedERC20", DAI_E_TOKEN_ADDRESS)) as IBridgeToken;
 
       alUsd = (await AlUSDFactory.connect(deployer).deploy()) as AlToken;
 
@@ -290,13 +288,15 @@ describe("Alchemist", () => {
     let transmuter: Signer;
     let minter: Signer;
     let user: Signer;
-    let token: Erc20Mock;
+    let token: IBridgeToken;
     let alUsd: AlToken;
     let alchemist: Alchemist;
-    let adapter: VaultAdapterMock;
+    let adapter: YakStrategyAdapter;
+    let vault: Contract;
+    let another_vault: Contract;
     let harvestFee = 1000;
     let pctReso = 10000;
-    let transmuterContract: Transmuter;
+    let transmuterContract: TransmuterYak;
 
     beforeEach(async () => {
       [
@@ -310,11 +310,11 @@ describe("Alchemist", () => {
         ...signers
       ] = signers;
 
-      token = (await ERC20MockFactory.connect(deployer).deploy(
-        "Mock DAI",
-        "DAI",
-        18
-      )) as Erc20Mock;
+      token = (await ethers.getContractAt("IBridgeToken", DAI_E_TOKEN_ADDRESS)) as IBridgeToken;
+
+      vault = await ethers.getContractAt("IYakStrategy", YAK_AAVE_DAI_E_ADDRESS);
+
+      another_vault = await ethers.getContractAt("IYakStrategy", YAK_USDT_E_ADDRESS);
 
       alUsd = (await AlUSDFactory.connect(deployer).deploy()) as AlToken;
 
@@ -336,18 +336,22 @@ describe("Alchemist", () => {
         alUsd.address,
         token.address,
         await governance.getAddress()
-      )) as Transmuter;
+      )) as TransmuterYak;
       await alchemist.connect(governance).setTransmuter(transmuterContract.address);
       await transmuterContract.connect(governance).setWhitelist(alchemist.address, true);
-      await token.mint(await minter.getAddress(), parseEther("10000"));
+      await transmuterContract.connect(governance).setPause(false);
+      // ToDo:
+      await mintToken(token, await minter.getAddress(), parseEther("10000"));
+      // await token.connect(minter).mint(await minter.getAddress(), parseEther("10000"), ZERO_ADDRESS, 0, ZERO_ADDRESS);
       await token.connect(minter).approve(alchemist.address, parseEther("10000"));
     });
 
     describe("migrate", () => {
       beforeEach(async () => {
-        adapter = (await VaultAdapterMockFactory.connect(deployer).deploy(
-          token.address
-        )) as VaultAdapterMock;
+        adapter = (await YakStrategyAdapterFactory.connect(deployer).deploy(
+          vault.address,
+          alchemist.address
+        )) as YakStrategyAdapter;
 
         await alchemist.connect(governance).initialize(adapter.address);
       });
@@ -374,16 +378,17 @@ describe("Alchemist", () => {
         });
 
         context("when adapter token mismatches", () => {
-          const tokenAddress = ethers.utils.getAddress(
-            "0xffffffffffffffffffffffffffffffffffffffff"
-          );
+          // const tokenAddress = ethers.utils.getAddress(
+          //   "0xffffffffffffffffffffffffffffffffffffffff"
+          // );
 
-          let invalidAdapter: VaultAdapterMock;
+          let invalidAdapter: YakStrategyAdapter;
 
           beforeEach(async () => {
-            invalidAdapter = (await VaultAdapterMockFactory.connect(
-              deployer
-            ).deploy(tokenAddress)) as VaultAdapterMock;
+            invalidAdapter = (await YakStrategyAdapterFactory.connect(deployer).deploy(
+              another_vault.address,
+              alchemist.address
+            )) as YakStrategyAdapter;
           });
 
           it("reverts", async () => {
@@ -411,30 +416,23 @@ describe("Alchemist", () => {
 
     describe("recall funds", () => {
       context("from the active vault", () => {
-        let adapter: YearnVaultAdapter;
-        let controllerMock: YearnControllerMock;
-        let vaultMock: YearnVaultMock;
+        let adapter: YakStrategyAdapter;
         let depositAmt = parseEther("5000");
         let mintAmt = parseEther("1000");
         let recallAmt = parseEther("500");
 
         beforeEach(async () => {
-          controllerMock = await YearnControllerMockFactory
+          adapter = await YakStrategyAdapterFactory
             .connect(deployer)
-            .deploy() as YearnControllerMock;
-          vaultMock = await YearnVaultMockFactory
-            .connect(deployer)
-            .deploy(token.address, controllerMock.address) as YearnVaultMock;
-          adapter = await YearnVaultAdapterFactory
-            .connect(deployer)
-            .deploy(vaultMock.address, alchemist.address) as YearnVaultAdapter;
-          await token.mint(await deployer.getAddress(), parseEther("10000"));
-          await token.approve(vaultMock.address, parseEther("10000"));
+            .deploy(vault.address, alchemist.address) as YakStrategyAdapter;
+          await mintToken(token, await deployer.getAddress(), parseEther("10000"));
+          // await token.mint(await deployer.getAddress(), parseEther("10000"));
+          await token.approve(vault.address, parseEther("10000"));
           await alchemist.connect(governance).initialize(adapter.address)
           await alchemist.connect(minter).deposit(depositAmt);
           await alchemist.flush();
           // need at least one other deposit in the vault to not get underflow errors
-          await vaultMock.connect(deployer).deposit(parseEther("100"));
+          await vault.connect(deployer).deposit(parseEther("100"));
         });
 
         it("reverts when not an emergency, not governance, and user does not have permission to recall funds from active vault", async () => {
@@ -465,7 +463,8 @@ describe("Alchemist", () => {
           it("after some usage", async () => {
             await alchemist.connect(minter).deposit(mintAmt);
             await alchemist.connect(governance).flush();
-            await token.mint(adapter.address, parseEther("500"));
+            await mintToken(token, adapter.address, parseEther("500"));
+            // await token.mint(adapter.address, parseEther("500"));
             await alchemist.connect(governance).setEmergencyExit(true);
             await alchemist.connect(minter).recallAll(0);
             expect(await token.connect(governance).balanceOf(alchemist.address)).equal(depositAmt.add(mintAmt));
@@ -474,18 +473,19 @@ describe("Alchemist", () => {
       });
 
       context("from an inactive vault", () => {
-        let inactiveAdapter: VaultAdapterMock;
-        let activeAdapter: VaultAdapterMock;
+        let inactiveAdapter: YakStrategyAdapter;
+        let activeAdapter: YakStrategyAdapter;
         let depositAmt = parseEther("5000");
         let mintAmt = parseEther("1000");
         let recallAmt = parseEther("500");
 
         beforeEach(async () => {
-          inactiveAdapter = await VaultAdapterMockFactory.connect(deployer).deploy(token.address) as VaultAdapterMock;
-          activeAdapter = await VaultAdapterMockFactory.connect(deployer).deploy(token.address) as VaultAdapterMock;
+          inactiveAdapter = await YakStrategyAdapterFactory.connect(deployer).deploy(vault.address, alchemist.address) as YakStrategyAdapter;
+          activeAdapter = await YakStrategyAdapterFactory.connect(deployer).deploy(vault.address, alchemist.address) as YakStrategyAdapter;
 
           await alchemist.connect(governance).initialize(inactiveAdapter.address);
-          await token.mint(await minter.getAddress(), depositAmt);
+          await mintToken(token, await minter.getAddress(), depositAmt);
+          // await token.mint(await minter.getAddress(), depositAmt);
           await token.connect(minter).approve(alchemist.address, depositAmt);
           await alchemist.connect(minter).deposit(depositAmt);
           await alchemist.connect(minter).flush();
@@ -513,8 +513,6 @@ describe("Alchemist", () => {
     });
 
     describe("flush funds", () => {
-      let adapter: VaultAdapterMock;
-
       context("when the Alchemist is not initialized", () => {
         it("reverts", async () => {
           expect(alchemist.flush()).revertedWith("Alchemist: not initialized.");
@@ -523,17 +521,18 @@ describe("Alchemist", () => {
 
       context("when there is at least one vault to flush to", () => {
         context("when there is one vault", () => {
-          let adapter: VaultAdapterMock;
+          let adapter: YakStrategyAdapter;
           let mintAmount = parseEther("5000");
 
           beforeEach(async () => {
-            adapter = (await VaultAdapterMockFactory.connect(deployer).deploy(
-              token.address
-            )) as VaultAdapterMock;
+            adapter = (await YakStrategyAdapterFactory.connect(deployer).deploy(
+              vault.address, alchemist.address
+            )) as YakStrategyAdapter;
           });
 
           beforeEach(async () => {
-            await token.mint(alchemist.address, mintAmount);
+            await mintToken(token, alchemist.address, mintAmount);
+            // await token.mint(alchemist.address, mintAmount);
 
             await alchemist.connect(governance).initialize(adapter.address);
 
@@ -546,20 +545,21 @@ describe("Alchemist", () => {
         });
 
         context("when there are multiple vaults", () => {
-          let inactiveAdapter: VaultAdapterMock;
-          let activeAdapter: VaultAdapterMock;
+          let inactiveAdapter: YakStrategyAdapter;
+          let activeAdapter: YakStrategyAdapter;
           let mintAmount = parseEther("5000");
 
           beforeEach(async () => {
-            inactiveAdapter = (await VaultAdapterMockFactory.connect(
+            inactiveAdapter = (await YakStrategyAdapterFactory.connect(
               deployer
-            ).deploy(token.address)) as VaultAdapterMock;
+            ).deploy(vault.address, alchemist.address)) as YakStrategyAdapter;
 
-            activeAdapter = (await VaultAdapterMockFactory.connect(
+            activeAdapter = (await YakStrategyAdapterFactory.connect(
               deployer
-            ).deploy(token.address)) as VaultAdapterMock;
+            ).deploy(vault.address, alchemist.address)) as YakStrategyAdapter;
 
-            await token.mint(alchemist.address, mintAmount);
+            await mintToken(token, alchemist.address, mintAmount);
+            // await token.mint(alchemist.address, mintAmount);
 
             await alchemist
               .connect(governance)
@@ -585,16 +585,18 @@ describe("Alchemist", () => {
       let ceilingAmt = parseEther("10000");
       let collateralizationLimit = "2000000000000000000"; // this should be set in the deploy sequence
       beforeEach(async () => {
-        adapter = (await VaultAdapterMockFactory.connect(deployer).deploy(
-          token.address
-        )) as VaultAdapterMock;
+        adapter = (await YakStrategyAdapterFactory.connect(deployer).deploy(
+          vault.address,
+          alchemist.address
+        )) as YakStrategyAdapter;
         await alchemist.connect(governance).initialize(adapter.address);
         await alchemist
           .connect(governance)
           .setCollateralizationLimit(collateralizationLimit);
         await alUsd.connect(deployer).setWhitelist(alchemist.address, true);
         await alUsd.connect(deployer).setCeiling(alchemist.address, ceilingAmt);
-        await token.mint(await minter.getAddress(), depositAmt);
+        await mintToken(token, await minter.getAddress(), depositAmt);
+        // await token.mint(await minter.getAddress(), depositAmt);
         await token.connect(minter).approve(alchemist.address, parseEther("100000000"));
         await alUsd.connect(minter).approve(alchemist.address, parseEther("100000000"));
       });
@@ -652,8 +654,10 @@ describe("Alchemist", () => {
       describe("flushActivator", async () => {
         beforeEach(async () => {
           await token.connect(deployer).approve(alchemist.address, parseEther("1"));
-          await token.mint(await deployer.getAddress(), parseEther("1"));
-          await token.mint(await minter.getAddress(), parseEther("100000"));
+          await mintToken(token, await deployer.getAddress(), parseEther("1"));
+          await mintToken(token, await minter.getAddress(), parseEther("100000"));
+          // await token.mint(await deployer.getAddress(), parseEther("1"));
+          // await token.mint(await minter.getAddress(), parseEther("100000"));
           await alchemist.connect(deployer).deposit(parseEther("1"));
         });
 
@@ -701,16 +705,18 @@ describe("Alchemist", () => {
       let ceilingAmt = parseEther("10000");
       let collateralizationLimit = "2000000000000000000"; // this should be set in the deploy sequence
       beforeEach(async () => {
-        adapter = (await VaultAdapterMockFactory.connect(deployer).deploy(
-          token.address
-        )) as VaultAdapterMock;
+        adapter = (await YakStrategyAdapterFactory.connect(deployer).deploy(
+          vault.address,
+          alchemist.address
+        )) as YakStrategyAdapter;
         await alchemist.connect(governance).initialize(adapter.address);
         await alchemist
           .connect(governance)
           .setCollateralizationLimit(collateralizationLimit);
         await alUsd.connect(deployer).setWhitelist(alchemist.address, true);
         await alUsd.connect(deployer).setCeiling(alchemist.address, ceilingAmt);
-        await token.mint(await minter.getAddress(), ceilingAmt);
+        await mintToken(token, await minter.getAddress(), ceilingAmt);
+        // await token.mint(await minter.getAddress(), ceilingAmt);
         await token.connect(minter).approve(alchemist.address, ceilingAmt);
         await alUsd.connect(minter).approve(alchemist.address, parseEther("100000000"));
         await token.connect(minter).approve(transmuterContract.address, ceilingAmt);
@@ -799,14 +805,16 @@ describe("Alchemist", () => {
       let ceilingAmt = parseEther("1000");
 
       beforeEach(async () => {
-        adapter = (await VaultAdapterMockFactory.connect(deployer).deploy(
-          token.address
-        )) as VaultAdapterMock;
+        adapter = (await YakStrategyAdapterFactory.connect(deployer).deploy(
+          vault.address,
+          alchemist.address
+        )) as YakStrategyAdapter;
 
         await alchemist.connect(governance).initialize(adapter.address);
 
         await alUsd.connect(deployer).setCeiling(alchemist.address, ceilingAmt);
-        await token.mint(await minter.getAddress(), depositAmt);
+        await mintToken(token, await minter.getAddress(), depositAmt);
+        // await token.mint(await minter.getAddress(), depositAmt);
         await token.connect(minter).approve(alchemist.address, depositAmt);
       });
 
@@ -861,7 +869,8 @@ describe("Alchemist", () => {
         describe("flushActivator", async () => {
           beforeEach(async () => {
             await alUsd.connect(deployer).setCeiling(alchemist.address, parseEther("200000"));
-            await token.mint(await minter.getAddress(), parseEther("200000"));
+            await mintToken(token, await minter.getAddress(), parseEther("200000"));
+            // await token.mint(await minter.getAddress(), parseEther("200000"));
             await token.connect(minter).approve(alchemist.address, parseEther("200000"));
           });
   
@@ -900,14 +909,16 @@ describe("Alchemist", () => {
       let yieldAmt = parseEther("100");
 
       beforeEach(async () => {
-        adapter = (await VaultAdapterMockFactory.connect(deployer).deploy(
-          token.address
-        )) as VaultAdapterMock;
+        adapter = (await YakStrategyAdapterFactory.connect(deployer).deploy(
+          vault.address,
+          alchemist.address
+        )) as YakStrategyAdapter;
 
         await alUsd.connect(deployer).setWhitelist(alchemist.address, true);
         await alchemist.connect(governance).initialize(adapter.address);
         await alUsd.connect(deployer).setCeiling(alchemist.address, ceilingAmt);
-        await token.mint(await user.getAddress(), depositAmt);
+        await mintToken(token, await user.getAddress(), depositAmt);
+        // await token.mint(await user.getAddress(), depositAmt);
         await token.connect(user).approve(alchemist.address, depositAmt);
         await alUsd.connect(user).approve(transmuterContract.address, depositAmt);
         await alchemist.connect(user).deposit(depositAmt);
@@ -917,7 +928,8 @@ describe("Alchemist", () => {
       });
 
       it("harvests yield from the vault", async () => {
-        await token.mint(adapter.address, yieldAmt);
+        await mintToken(token, adapter.address, yieldAmt);
+        // await token.mint(adapter.address, yieldAmt);
         await alchemist.harvest(0);
         let transmuterBal = await token.balanceOf(transmuterContract.address);
         expect(transmuterBal).equal(yieldAmt.sub(yieldAmt.div(pctReso/harvestFee)));
@@ -926,7 +938,8 @@ describe("Alchemist", () => {
       })
 
       it("sends the harvest fee to the rewards address", async () => {
-        await token.mint(adapter.address, yieldAmt);
+        await mintToken(token, adapter.address, yieldAmt);
+        // await token.mint(adapter.address, yieldAmt);
         await alchemist.harvest(0);
         let rewardsBal = await token.balanceOf(await rewards.getAddress());
         expect(rewardsBal).equal(yieldAmt.mul(100).div(harvestFee));
