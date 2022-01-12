@@ -48,7 +48,7 @@
     "clean": "npx hardhat clean",
     "compile": "npx hardhat compile",
     "coverage": "npx hardhat coverage",
-    "test": "npx hardhat test"
+    "test": "npx hardhat test --network localhost"
   },
   "dependencies": {
     "@studydefi/money-legos": "^2.4.1",

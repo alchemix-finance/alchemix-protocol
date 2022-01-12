@@ -5,6 +5,12 @@ import "solidity-coverage";
 
 require('dotenv').config()
 
+const forkingData = {
+  url: process.env.AVALANCHE_MAINNET_URL,
+  enabled: true,
+  blockNumber: parseInt(process.env.MAINNET_BLOCK_NUMBER || '') || 9441313
+}
+
 export default {
   namedAccounts: {
     deployer: 0,
@@ -34,9 +40,11 @@ export default {
       gas: 20000000,
     },
     hardhat: {
-      chainId: 1337,
+      chainId: 43114, //Only specify a chainId if we are not forking
       allowUnlimitedContractSize: false,
-      blockGasLimit: 25000000
+      gasPrice: 225000000000,
+      loggingEnabled: true,
+      forking: forkingData,
     }
   },
   solidity: {
@@ -52,4 +60,7 @@ export default {
     outDir: "types",
     target: "ethers-v5"
   },
+  mocha: {
+    timeout: 200000
+  }  
 };
