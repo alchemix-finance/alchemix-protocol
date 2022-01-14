@@ -441,7 +441,6 @@ describe("Alchemist", () => {
             .connect(deployer)
             .deploy(vault.address, alchemist.address) as YakStrategyAdapter;
           await mintToken(token, await deployer.getAddress(), parseEther("10000"));
-          // await token.mint(await deployer.getAddress(), parseEther("10000"));
           await token.approve(vault.address, parseEther("10000"));
           await alchemist.connect(governance).initialize(adapter.address)
           await alchemist.connect(minter).deposit(depositAmt);
@@ -479,7 +478,6 @@ describe("Alchemist", () => {
             await alchemist.connect(minter).deposit(mintAmt);
             await alchemist.connect(governance).flush();
             await mintToken(token, adapter.address, parseEther("500"));
-            // await token.mint(adapter.address, parseEther("500"));
             await alchemist.connect(governance).setEmergencyExit(true);
             await alchemist.connect(minter).recallAll(0);
             expect(await token.connect(governance).balanceOf(alchemist.address)).gte(parseEther("500").sub(THRESHOLD));
@@ -500,7 +498,6 @@ describe("Alchemist", () => {
 
           await alchemist.connect(governance).initialize(inactiveAdapter.address);
           await mintToken(token, await minter.getAddress(), depositAmt);
-          // await token.mint(await minter.getAddress(), depositAmt);
           await token.connect(minter).approve(alchemist.address, depositAmt);
           await alchemist.connect(minter).deposit(depositAmt);
           await alchemist.connect(minter).flush();
@@ -545,7 +542,6 @@ describe("Alchemist", () => {
             )) as VaultAdapterMock;
 
             await mintToken(token, alchemist.address, mintAmount);
-            // await token.mint(alchemist.address, mintAmount);
 
             await alchemist.connect(governance).initialize(adapter.address);
 
@@ -572,7 +568,6 @@ describe("Alchemist", () => {
             ).deploy(token.address)) as VaultAdapterMock;
 
             await mintToken(token, alchemist.address, mintAmount);
-            // await token.mint(alchemist.address, mintAmount);
 
             await alchemist
               .connect(governance)
@@ -609,7 +604,6 @@ describe("Alchemist", () => {
         await alUsd.connect(deployer).setWhitelist(alchemist.address, true);
         await alUsd.connect(deployer).setCeiling(alchemist.address, ceilingAmt);
         await mintToken(token, await minter.getAddress(), depositAmt);
-        // await token.mint(await minter.getAddress(), depositAmt);
         await token.connect(minter).approve(alchemist.address, parseEther("100000000"));
         await alUsd.connect(minter).approve(alchemist.address, parseEther("100000000"));
       });
@@ -669,8 +663,6 @@ describe("Alchemist", () => {
           await token.connect(deployer).approve(alchemist.address, parseEther("1"));
           await mintToken(token, await deployer.getAddress(), parseEther("1"));
           await mintToken(token, await minter.getAddress(), parseEther("100000"));
-          // await token.mint(await deployer.getAddress(), parseEther("1"));
-          // await token.mint(await minter.getAddress(), parseEther("100000"));
           await alchemist.connect(deployer).deposit(parseEther("1"));
         });
 
@@ -736,7 +728,6 @@ describe("Alchemist", () => {
         await alUsd.connect(deployer).setWhitelist(alchemist.address, true);
         await alUsd.connect(deployer).setCeiling(alchemist.address, ceilingAmt);
         await mintToken(token, await minter.getAddress(), ceilingAmt);
-        // await token.mint(await minter.getAddress(), ceilingAmt);
         await token.connect(minter).approve(alchemist.address, ceilingAmt);
         await alUsd.connect(minter).approve(alchemist.address, parseEther("100000000"));
         await token.connect(minter).approve(transmuterContract.address, ceilingAmt);
@@ -835,7 +826,6 @@ describe("Alchemist", () => {
 
         await alUsd.connect(deployer).setCeiling(alchemist.address, ceilingAmt);
         await mintToken(token, await minter.getAddress(), depositAmt);
-        // await token.mint(await minter.getAddress(), depositAmt);
         await token.connect(minter).approve(alchemist.address, depositAmt);
       });
 
@@ -891,7 +881,6 @@ describe("Alchemist", () => {
           beforeEach(async () => {
             await alUsd.connect(deployer).setCeiling(alchemist.address, parseEther("200000"));
             await mintToken(token, await minter.getAddress(), parseEther("200000"));
-            // await token.mint(await minter.getAddress(), parseEther("200000"));
             await token.connect(minter).approve(alchemist.address, parseEther("200000"));
           });
   
@@ -939,7 +928,6 @@ describe("Alchemist", () => {
         await alchemist.connect(governance).initialize(adapter.address);
         await alUsd.connect(deployer).setCeiling(alchemist.address, ceilingAmt);
         await mintToken(token, await user.getAddress(), depositAmt);
-        // await token.mint(await user.getAddress(), depositAmt);
         await token.connect(user).approve(alchemist.address, depositAmt);
         await alUsd.connect(user).approve(transmuterContract.address, depositAmt);
         await alchemist.connect(user).deposit(depositAmt);
@@ -950,7 +938,6 @@ describe("Alchemist", () => {
 
       it("harvests yield from the vault", async () => {
         await mintToken(token, adapter.address, yieldAmt);
-        // await token.mint(adapter.address, yieldAmt);
         await alchemist.harvest(0);
         let transmuterBal = await token.balanceOf(transmuterContract.address);
         expect(transmuterBal).gte(yieldAmt.sub(yieldAmt.div(pctReso/harvestFee)).sub(THRESHOLD)).equal(true);
@@ -960,7 +947,6 @@ describe("Alchemist", () => {
 
       it("sends the harvest fee to the rewards address", async () => {
         await mintToken(token, adapter.address, yieldAmt);
-        // await token.mint(adapter.address, yieldAmt);
         await alchemist.harvest(0);
         let rewardsBal = await token.balanceOf(await rewards.getAddress());
         expect(rewardsBal).gte(yieldAmt.mul(100).div(harvestFee).sub(THRESHOLD)).equal(true);

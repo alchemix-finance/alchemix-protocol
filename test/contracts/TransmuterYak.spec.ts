@@ -146,13 +146,10 @@ describe("TransmuterYak", () => {
     await alUsd.connect(deployer).setCeiling(alchemist.address, ceilingAmt);
 
     await mintToken(token, mockAlchemistAddress, utils.parseEther("10000"));
-    // await token.mint(mockAlchemistAddress, utils.parseEther("10000"));
     await token.connect(mockAlchemist).approve(transmuter.address, MAXIMUM_U256);
 
     await mintToken(token, await depositor.getAddress(), utils.parseEther("20000"));
     await mintToken(token, await minter.getAddress(), utils.parseEther("20000"));
-    // await token.mint(await depositor.getAddress(), utils.parseEther("20000"));
-    // await token.mint(await minter.getAddress(), utils.parseEther("20000"));
     await token.connect(depositor).approve(transmuter.address, MAXIMUM_U256);
     await alUsd.connect(depositor).approve(transmuter.address, MAXIMUM_U256);
     await token.connect(depositor).approve(alchemist.address, MAXIMUM_U256);
@@ -227,7 +224,6 @@ describe("TransmuterYak", () => {
     beforeEach(async () => {
       await transmuter.connect(governance).setTransmutationPeriod(transmutationPeriod);
       await mintToken(token, await minter.getAddress(), utils.parseEther("20000"));
-      // await token.mint(await minter.getAddress(), utils.parseEther("20000"));
       await token.connect(minter).approve(transmuter.address, MAXIMUM_U256);
       await alUsd.connect(minter).approve(transmuter.address, MAXIMUM_U256);
       await token.connect(minter).approve(alchemist.address, MAXIMUM_U256);
@@ -235,7 +231,6 @@ describe("TransmuterYak", () => {
       await alchemist.connect(minter).deposit(utils.parseEther("10000"));
       await alchemist.connect(minter).mint(utils.parseEther("5000"));
       await mintToken(token, await rewards.getAddress(), utils.parseEther("20000"));
-      // await token.mint(await rewards.getAddress(), utils.parseEther("20000"));
       await token.connect(rewards).approve(transmuter.address, MAXIMUM_U256);
       await alUsd.connect(rewards).approve(transmuter.address, MAXIMUM_U256);
       await token.connect(rewards).approve(alchemist.address, MAXIMUM_U256);
@@ -369,11 +364,9 @@ describe("TransmuterYak", () => {
       await alUsd.connect(minter).approve(alchemist.address, MAXIMUM_U256);
       await alUsd.connect(user).approve(alchemist.address, MAXIMUM_U256);
       await mintToken(token, await minter.getAddress(), utils.parseEther("20000"));
-      // await token.mint(await minter.getAddress(), utils.parseEther("20000"));
       await alchemist.connect(minter).deposit(utils.parseEther("10000"));
       await alchemist.connect(minter).mint(utils.parseEther("5000"));
       await mintToken(token, await user.getAddress(), utils.parseEther("20000"));
-      // await token.mint(await user.getAddress(), utils.parseEther("20000"));
       await alchemist.connect(user).deposit(utils.parseEther("10000"));
       await alchemist.connect(user).mint(utils.parseEther("5000"));
 
@@ -559,7 +552,6 @@ describe("TransmuterYak", () => {
     beforeEach(async () => {
       transmuter.connect(governance).setTransmutationPeriod(10);
       await mintToken(token, await minter.getAddress(), utils.parseEther("20000"));
-      // await token.mint(await minter.getAddress(), utils.parseEther("20000"));
       await token.connect(minter).approve(transmuter.address, MAXIMUM_U256);
       await alUsd.connect(minter).approve(transmuter.address, MAXIMUM_U256);
       await token.connect(minter).approve(alchemist.address, MAXIMUM_U256);
