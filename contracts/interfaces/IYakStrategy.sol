@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0
 pragma solidity ^0.6.12;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -18,9 +19,9 @@ interface IYakStrategy is IERC20 {
     function getSharesForDepositTokens(uint amount) external view returns (uint);
     
     function totalDeposits() external view returns (uint);
-    function deposit(uint256 amount) external returns (uint);
-    function depositFor(address account, uint256 amount) external returns (uint);
-    function withdraw(uint256 amount) external returns (uint);
+    function deposit(uint256 amount) external;
+    function depositFor(address account, uint256 amount) external;
+    function withdraw(uint256 amount) external;
     function estimateReinvestReward() external view returns (uint);
     function checkReward() external view returns (uint256);
     function estimateDeployedBalance() external view returns (uint);

@@ -54,13 +54,20 @@ contract YakStrategyAdapter is IVaultAdapter {
     ///
     /// @return the total assets.
     function totalValue() external view override returns (uint256) {
-        return vault.getDepositTokensForShares(vault.balanceOf(address(this)));
+        return _sharesToTokens(vault.balanceOf(address(this)));
     }
 
     /// @dev Deposits tokens into the vault.
     ///
     /// @param _amount the amount of tokens to deposit into the vault.
     function deposit(uint256 _amount) external override {
+
+        // address token = vault.depositToken();
+        // uint balanceBefore = IDetailedERC20(token).balanceOf(address(this));
+        // require(IDetailedERC20(token).transferFrom(msg.sender, address(this), _amount), "YakStrategyAdapter::deposit, failed");
+        // uint balanceAfter = IDetailedERC20(token).balanceOf(address(this));
+        // uint confirmedAmount = balanceAfter.sub(balanceBefore);
+        // require(confirmedAmount > 0, "YakStrategyAdapter::deposit, amount too low");
         vault.deposit(_amount);
     }
 
@@ -75,24 +82,24 @@ contract YakStrategyAdapter is IVaultAdapter {
         override
         onlyAdmin
     {
-        vault.withdraw(_amount);
         address _token = vault.depositToken();
-        uint256 _depositTokenAmount = vault.getDepositTokensForShares(_amount);
-        IDetailedERC20(_token).safeTransfer(_recipient, _depositTokenAmount);
-    }
+        uint256 _beforeBalance = IDetailedERC20(_token).balanceOf(address(this));
+        uint256 _vault_balance = vault.balanceOf(address(this));
+        uint256 _tokenToBurn = _tokensToShares(_amount);
 
-    /// @dev Sends vault tokens to the recipient
-    ///
-    /// This function reverts if the caller is not the admin.
-    ///
-    /// @param _recipient the account to send the tokens to.
-    /// @param _amount    the amount of tokens to send.
-    function indirectWithdraw(address _recipient, uint256 _amount)
-        external
-        onlyAdmin
-    {
-        uint256 _mintedAmount = vault.getSharesForDepositTokens(_amount);
-        vault.safeTransfer(_recipient, _mintedAmount);
+        if (_tokenToBurn > _vault_balance) {
+            _tokenToBurn = _vault_balance;
+        }
+        vault.withdraw(_tokenToBurn);
+
+        uint256 _afterBalance  = IDetailedERC20(_token).balanceOf(address(this));
+        uint256 _transferAmount = _afterBalance.sub(_beforeBalance);
+
+        require(_transferAmount > 0, "YakStrategyAdapter::withdraw, amount too low");
+        if (_transferAmount > _amount) {
+            _transferAmount = _amount;
+        }
+        IDetailedERC20(_token).safeTransfer(_recipient, _transferAmount);
     }
 
     /// @dev Updates the vaults approval of the token to be the maximum value.
@@ -100,4 +107,20 @@ contract YakStrategyAdapter is IVaultAdapter {
         address _token = vault.depositToken();
         IDetailedERC20(_token).safeApprove(address(vault), uint256(-1));
     }
+
+    function _sharesToTokens(uint256 _sharesAmount) internal view returns (uint256) {
+        return vault.getDepositTokensForShares(_sharesAmount);
+    }
+
+    /// @dev Computes the number of shares an amount of tokens is worth.
+    ///
+    /// @param _tokensAmount the amount of shares.
+    ///
+    /// @return the number of shares the tokens are worth.
+    function _tokensToShares(uint256 _tokensAmount) internal view returns (uint256) {
+        if (_tokensAmount.mul(vault.totalDeposits()) == 0) {
+            return _tokensAmount;
+        }        
+        return _tokensAmount.mul(vault.totalSupply()).div(vault.totalDeposits());
+    }    
 }

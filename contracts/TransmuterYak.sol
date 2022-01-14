@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0
+// SPDX-License-Identifier: GPL-3.0
 pragma solidity 0.6.12;
 
 import "@openzeppelin/contracts/GSN/Context.sol";
@@ -6,7 +8,7 @@ import "@openzeppelin/contracts/math/SafeMath.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
 import "./interfaces/IERC20Burnable.sol";
 import {YakStrategyAdapter} from "./adapters/YakStrategyAdapter.sol";
-import {YakStrategy} from "./libraries/alchemist/YakStrategy.sol";
+import {Vault} from "./libraries/alchemist/Vault.sol";
 import {ITransmuter} from "./interfaces/ITransmuter.sol";
 
 //    ___    __        __                _               ___                              __         _ 
@@ -48,8 +50,8 @@ contract TransmuterYak is Context {
     using SafeMath for uint256;
     using SafeERC20 for IERC20Burnable;
     using Address for address;
-    using YakStrategy for YakStrategy.Data;
-    using YakStrategy for YakStrategy.List;
+    using Vault for Vault.Data;
+    using Vault for Vault.List;
 
     address public constant ZERO_ADDRESS = address(0);
     uint256 public transmutationPeriod;
@@ -109,7 +111,7 @@ contract TransmuterYak is Context {
 
     /// @dev A list of all of the vaults. The last element of the list is the vault that is currently being used for
     /// deposits and withdraws. VaultWithIndirections before the last element are considered inactive and are expected to be cleared.
-    YakStrategy.List private _vaults;
+    Vault.List private _vaults;
 
     /// @dev make sure the contract is only initialized once.
     bool public initialized;
@@ -712,7 +714,7 @@ contract TransmuterYak is Context {
         require(address(_adapter.token()) == token, "Transmuter.vault: token mismatch.");
         require(!adapters[_adapter], "Adapter already in use");
         adapters[_adapter] = true;
-        _vaults.push(YakStrategy.Data({
+        _vaults.push(Vault.Data({
             adapter: _adapter,
             totalDeposited: 0
         }));
@@ -733,7 +735,7 @@ contract TransmuterYak is Context {
     ///
     /// @return the vault adapter.
     function getVaultAdapter(uint256 _vaultId) external view returns (address) {
-        YakStrategy.Data storage _vault = _vaults.get(_vaultId);
+        Vault.Data storage _vault = _vaults.get(_vaultId);
         return address(_vault.adapter);
     }
 
@@ -743,7 +745,7 @@ contract TransmuterYak is Context {
     ///
     /// @return the total amount of deposited tokens.
     function getVaultTotalDeposited(uint256 _vaultId) external view returns (uint256) {
-        YakStrategy.Data storage _vault = _vaults.get(_vaultId);
+        Vault.Data storage _vault = _vaults.get(_vaultId);
         return _vault.totalDeposited;
     }
 
@@ -772,7 +774,7 @@ contract TransmuterYak is Context {
     ///
     /// @param _vaultId the id of the vault from which to recall funds
     function _recallAllFundsFromVault(uint256 _vaultId) internal {
-        YakStrategy.Data storage _vault = _vaults.get(_vaultId);
+        Vault.Data storage _vault = _vaults.get(_vaultId);
         (uint256 _withdrawnAmount, uint256 _decreasedValue) = _vault.withdrawAll(address(this));
         emit FundsRecalled(_vaultId, _withdrawnAmount, _decreasedValue);
     }
@@ -791,7 +793,7 @@ contract TransmuterYak is Context {
     /// @param _vaultId the id of the vault from which to recall funds
     /// @param _amount the amount of funds to recall
     function _recallFundsFromVault(uint256 _vaultId, uint256 _amount) internal {
-        YakStrategy.Data storage _vault = _vaults.get(_vaultId);
+        Vault.Data storage _vault = _vaults.get(_vaultId);
         (uint256 _withdrawnAmount, uint256 _decreasedValue) = _vault.withdraw(address(this), _amount);
         emit FundsRecalled(_vaultId, _withdrawnAmount, _decreasedValue);
     }
@@ -814,7 +816,7 @@ contract TransmuterYak is Context {
         if (bal > plantableThreshold.add(marginVal)) {
             uint256 plantAmt = bal - plantableThreshold;
             // if total funds above threshold, send funds to vault
-            YakStrategy.Data storage _activeVault = _vaults.last();
+            Vault.Data storage _activeVault = _vaults.last();
             _activeVault.deposit(plantAmt);
         } else if (bal < plantableThreshold.sub(marginVal)) {
             // if total funds below threshold, recall funds from vault
@@ -830,7 +832,7 @@ contract TransmuterYak is Context {
     ///
     /// @param _recallAmt the amount to harvest from the active vault
     function _recallExcessFundsFromActiveVault(uint256 _recallAmt) internal {
-        YakStrategy.Data storage _activeVault = _vaults.last();
+        Vault.Data storage _activeVault = _vaults.last();
         uint256 activeVaultVal = _activeVault.totalValue();
         if (activeVaultVal < _recallAmt) {
             _recallAmt = activeVaultVal;
@@ -901,7 +903,7 @@ contract TransmuterYak is Context {
     /// @return the amount of funds that were harvested from the vault.
     function harvest(uint256 _vaultId) external onlyKeeper() returns (uint256, uint256) {
 
-        YakStrategy.Data storage _vault = _vaults.get(_vaultId);
+        Vault.Data storage _vault = _vaults.get(_vaultId);
 
         (uint256 _harvestedAmount, uint256 _decreasedValue) = _vault.harvest(rewards);
 
