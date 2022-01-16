@@ -41,8 +41,10 @@ export default {
     },
     hardhat: {
       chainId: 43114, //Only specify a chainId if we are not forking
-      allowUnlimitedContractSize: false,
+      allowUnlimitedContractSize: true,
       gasPrice: 225000000000,
+      blockGasLimit: 8000000,
+      gasMultiplier: 5,
       loggingEnabled: true,
       forking: forkingData,
     }

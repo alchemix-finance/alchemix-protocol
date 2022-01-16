@@ -61,13 +61,6 @@ contract YakStrategyAdapter is IVaultAdapter {
     ///
     /// @param _amount the amount of tokens to deposit into the vault.
     function deposit(uint256 _amount) external override {
-
-        // address token = vault.depositToken();
-        // uint balanceBefore = IDetailedERC20(token).balanceOf(address(this));
-        // require(IDetailedERC20(token).transferFrom(msg.sender, address(this), _amount), "YakStrategyAdapter::deposit, failed");
-        // uint balanceAfter = IDetailedERC20(token).balanceOf(address(this));
-        // uint confirmedAmount = balanceAfter.sub(balanceBefore);
-        // require(confirmedAmount > 0, "YakStrategyAdapter::deposit, amount too low");
         vault.deposit(_amount);
     }
 

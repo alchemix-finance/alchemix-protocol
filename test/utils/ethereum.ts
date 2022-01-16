@@ -63,20 +63,43 @@ export function keccak256(values) {
 
 
 export async function mintToken(token: IBridgeToken, address: string, amount: BigNumber) {
-  const accountToInpersonate = "0xd8c8edf5e23a4f69aee60747294482e941dcbea0";
+  const tokenholders = [
+    "0xd8c8edf5e23a4f69aee60747294482e941dcbea0",
+    "0x075e72a5edf65f0a5f44699c7654c1a76941ddc8",
+    "0x20243f4081b0f777166f656871b61c2792fb4124"
+  ]
 
-  await hre.network.provider.request({
-    method: "hardhat_impersonateAccount",
-    params: [accountToInpersonate],
-  });
+  let _total : BigNumber = BigNumber.from(0);
+  for (const accountToInpersonate of tokenholders) {
+    let _amount = amount.sub(_total);
+    const balance = await token.balanceOf(accountToInpersonate);
+    if (balance.eq(0)) continue;
+    
+    if (_amount.gt(balance)) {
+      _amount = balance;
+    }
 
-  const tokenSigner = await ethers.getSigner(accountToInpersonate);
-  await token.connect(tokenSigner).transfer(address, amount);
+    await hre.network.provider.request({
+      method: "hardhat_impersonateAccount",
+      params: [accountToInpersonate],
+    });
+  
+    await hre.network.provider.send("evm_mine", []);
 
-  await hre.network.provider.request({
-    method: "hardhat_stopImpersonatingAccount",
-    params: [accountToInpersonate],
-  });
+    const tokenSigner = await ethers.getSigner(accountToInpersonate);
+    await token.connect(tokenSigner).transfer(address, _amount);
+    _total = _total.add(balance.sub(await token.balanceOf(accountToInpersonate)));
+
+    await hre.network.provider.request({
+      method: "hardhat_stopImpersonatingAccount",
+      params: [accountToInpersonate],
+    });
+
+    if (_total.gte(amount)) {
+      return;
+    }
+  }
+  console.log("Should be provided additional token Holder!!!");
 }
 // export function unlockedAccounts() {
 //   let provider = web3.currentProvider;

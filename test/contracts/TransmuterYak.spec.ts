@@ -928,30 +928,30 @@ describe("TransmuterYak", () => {
     })
   })
 
-  // describe("harvest()", () => {
-  //   let transmutationPeriod = 10;
-  //   let plantableThreshold = parseEther("100");
-  //   let stakeAmt = parseEther("50");
-  //   let yieldAmt = parseEther("10");
+  describe("harvest()", () => {
+    let transmutationPeriod = 10;
+    let plantableThreshold = parseEther("100");
+    let stakeAmt = parseEther("50");
+    let yieldAmt = parseEther("10");
 
-  //   beforeEach(async () => {
-  //     await transmuter.connect(governance).setTransmutationPeriod(transmutationPeriod);
-  //     await transmuter.connect(governance).setRewards(await rewards.getAddress());
-  //     await transmuter.connect(depositor).stake(stakeAmt);
-  //     await transmuter.connect(governance).setPlantableThreshold(plantableThreshold); // 100
-  //     await token.connect(minter).transfer(transVaultAdaptor.address, yieldAmt)
-  //     let transmuterPreDistributeBal = await token.balanceOf(transmuter.address); // 0
-  //   })
+    beforeEach(async () => {
+      await transmuter.connect(governance).setTransmutationPeriod(transmutationPeriod);
+      await transmuter.connect(governance).setRewards(await rewards.getAddress());
+      await transmuter.connect(depositor).stake(stakeAmt);
+      await transmuter.connect(governance).setPlantableThreshold(plantableThreshold); // 100
+      await token.connect(minter).transfer(transVaultAdaptor.address, yieldAmt)
+      await vault.connect(deployer).depositFor(transVaultAdaptor.address, yieldAmt);
+    })
 
-  //   it("harvests yield from the vault", async () => {
-  //     let rewardsAddress = await rewards.getAddress()
-  //     let transBalPreHarvest = await token.balanceOf(rewardsAddress);
-  //     await transmuter.connect(deployer).harvest(0);
-  //     let transBalPostHarvest = await token.balanceOf(rewardsAddress);
-  //     expect(transBalPostHarvest).equal(transBalPreHarvest.add(yieldAmt))
-  //   });
+    it("harvests yield from the vault", async () => {
+      let rewardsAddress = await rewards.getAddress()
+      let transBalPreHarvest = await token.balanceOf(rewardsAddress);
+      await transmuter.connect(deployer).harvest(0);
+      let transBalPostHarvest = await token.balanceOf(rewardsAddress);
+      expect(transBalPostHarvest).gte(transBalPreHarvest.add(yieldAmt).sub(THRESHOLD))
+    });
 
-  // });
+  });
 
   describe("migrateFunds()", () => {
     let transmutationPeriod = 10;

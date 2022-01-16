@@ -298,7 +298,7 @@ describe("Alchemist", () => {
     let token: IBridgeToken;
     let alUsd: AlToken;
     let alchemist: Alchemist;
-    let adapter: YakStrategyAdapter;
+    let adapter: VaultAdapterMock;
     let vault: IYakStrategy;
     let another_vault: IYakStrategy;
     let harvestFee = 1000;
@@ -357,16 +357,13 @@ describe("Alchemist", () => {
       await transmuterContract.connect(governance).setWhitelist(alchemist.address, true);
       await transmuterContract.connect(governance).setPause(false);
 
-      await mintToken(token, await minter.getAddress(), parseEther("10000"));
-      await token.connect(minter).approve(alchemist.address, parseEther("10000"));
     });
 
     describe("migrate", () => {
       beforeEach(async () => {
-        adapter = (await YakStrategyAdapterFactory.connect(deployer).deploy(
-          vault.address,
-          alchemist.address
-        )) as YakStrategyAdapter;
+        adapter = (await VaultAdapterMockFactory.connect(deployer).deploy(
+          token.address
+        )) as VaultAdapterMock;
 
         await alchemist.connect(governance).initialize(adapter.address);
       });
@@ -440,6 +437,8 @@ describe("Alchemist", () => {
           adapter = await YakStrategyAdapterFactory
             .connect(deployer)
             .deploy(vault.address, alchemist.address) as YakStrategyAdapter;
+          await mintToken(token, await minter.getAddress(), parseEther("10000"));
+          await token.connect(minter).approve(alchemist.address, parseEther("10000"));
           await mintToken(token, await deployer.getAddress(), parseEther("10000"));
           await token.approve(vault.address, parseEther("10000"));
           await alchemist.connect(governance).initialize(adapter.address)
@@ -471,7 +470,7 @@ describe("Alchemist", () => {
           it("anyone can recall funds", async () => {
             await alchemist.connect(governance).setEmergencyExit(true);
             await alchemist.connect(minter).recallAll(0);
-            expect((await token.connect(governance).balanceOf(alchemist.address)).gte(depositAmt.sub(THRESHOLD))).equal(true);
+            expect(await token.connect(governance).balanceOf(alchemist.address)).gte(depositAmt.sub(THRESHOLD));
           });
 
           it("after some usage", async () => {
@@ -533,7 +532,6 @@ describe("Alchemist", () => {
 
       context("when there is at least one vault to flush to", () => {
         context("when there is one vault", () => {
-          let adapter: VaultAdapterMock;
           let mintAmount = parseEther("5000");
 
           beforeEach(async () => {
@@ -592,7 +590,7 @@ describe("Alchemist", () => {
       let mintAmt = parseEther("1000");
       let ceilingAmt = parseEther("10000");
       let collateralizationLimit = "2000000000000000000"; // this should be set in the deploy sequence
-      let adapter: VaultAdapterMock;
+
       beforeEach(async () => {
         adapter = (await VaultAdapterMockFactory.connect(deployer).deploy(
           token.address
@@ -649,12 +647,14 @@ describe("Alchemist", () => {
       });
 
       it("deposits 5000 DAI, mints 1000 alUSD, and withdraws 3000 DAI", async () => {
+        let balBefore = await token.balanceOf(await minter.getAddress());
         let withdrawAmt = depositAmt.sub(mintAmt.mul(2));
         await alchemist.connect(minter).deposit(depositAmt);
         await alchemist.connect(minter).mint(mintAmt);
         await alchemist.connect(minter).withdraw(withdrawAmt);
-        expect(await token.balanceOf(await minter.getAddress())).equal(
-          parseEther("207000")
+        let balAfter = await token.balanceOf(await minter.getAddress());
+        expect(balBefore.sub(balAfter)).equal(
+          mintAmt.mul(2)
         );
       });
 
@@ -662,41 +662,42 @@ describe("Alchemist", () => {
         beforeEach(async () => {
           await token.connect(deployer).approve(alchemist.address, parseEther("1"));
           await mintToken(token, await deployer.getAddress(), parseEther("1"));
-          await mintToken(token, await minter.getAddress(), parseEther("100000"));
+          await mintToken(token, await minter.getAddress(), parseEther("10000"));
+          await alchemist.connect(governance).setFlushActivator(parseEther("10000"));
           await alchemist.connect(deployer).deposit(parseEther("1"));
         });
 
         it("deposit() flushes funds if amount >= flushActivator", async () => {
           let balBeforeWhale = await token.balanceOf(adapter.address);
-          await alchemist.connect(minter).deposit(parseEther("100000"));
+          await alchemist.connect(minter).deposit(parseEther("10000"));
           let balAfterWhale = await token.balanceOf(adapter.address);
           expect(balBeforeWhale).equal(0);
-          expect(balAfterWhale).equal(parseEther("100001"));
+          expect(balAfterWhale).equal(parseEther("10001"));
         });
 
         it("deposit() does not flush funds if amount < flushActivator", async () => {
           let balBeforeWhale = await token.balanceOf(adapter.address);
-          await alchemist.connect(minter).deposit(parseEther("99999"));
+          await alchemist.connect(minter).deposit(parseEther("9999"));
           let balAfterWhale = await token.balanceOf(adapter.address);
           expect(balBeforeWhale).equal(0);
           expect(balAfterWhale).equal(0);
         });
 
         it("withdraw() flushes funds if amount >= flushActivator", async () => {
-          await alchemist.connect(minter).deposit(parseEther("50000"));
-          await alchemist.connect(minter).deposit(parseEther("50000"));
+          await alchemist.connect(minter).deposit(parseEther("5000"));
+          await alchemist.connect(minter).deposit(parseEther("5000"));
           let balBeforeWhaleWithdraw = await token.balanceOf(adapter.address);
-          await alchemist.connect(minter).withdraw(parseEther("100000"));
+          await alchemist.connect(minter).withdraw(parseEther("10000"));
           let balAfterWhaleWithdraw = await token.balanceOf(adapter.address);
           expect(balBeforeWhaleWithdraw).equal(0);
           expect(balAfterWhaleWithdraw).equal(parseEther("1"));
         });
 
         it("withdraw() does not flush funds if amount < flushActivator", async () => {
-          await alchemist.connect(minter).deposit(parseEther("50000"));
-          await alchemist.connect(minter).deposit(parseEther("50000"));
+          await alchemist.connect(minter).deposit(parseEther("5000"));
+          await alchemist.connect(minter).deposit(parseEther("5000"));
           let balBeforeWhaleWithdraw = await token.balanceOf(adapter.address);
-          await alchemist.connect(minter).withdraw(parseEther("99999"));
+          await alchemist.connect(minter).withdraw(parseEther("9999"));
           let balAfterWhaleWithdraw = await token.balanceOf(adapter.address);
           expect(balBeforeWhaleWithdraw).equal(0);
           expect(balAfterWhaleWithdraw).equal(0);
@@ -709,17 +710,15 @@ describe("Alchemist", () => {
       let mintAmt = parseEther("1000");
       let ceilingAmt = parseEther("10000");
       let collateralizationLimit = "2000000000000000000"; // this should be set in the deploy sequence
-      let transmuterAdapter: YakStrategyAdapter;
+      let transmuterAdapter: VaultAdapterMock;
       beforeEach(async () => {
-        adapter = (await YakStrategyAdapterFactory.connect(deployer).deploy(
-          vault.address,
-          alchemist.address
-        )) as YakStrategyAdapter;
+        adapter = (await VaultAdapterMockFactory.connect(deployer).deploy(
+          token.address
+        )) as VaultAdapterMock;
 
-        transmuterAdapter = (await YakStrategyAdapterFactory.connect(deployer).deploy(
-          vault.address,
-          transmuterContract.address
-        )) as YakStrategyAdapter;
+        transmuterAdapter = (await VaultAdapterMockFactory.connect(deployer).deploy(
+          token.address
+        )) as VaultAdapterMock;
 
         await alchemist.connect(governance).initialize(adapter.address);
         await alchemist
@@ -759,7 +758,7 @@ describe("Alchemist", () => {
         const alchemistTokenBalPost = await token.balanceOf(alchemist.address);
         const transmuterEndingTokenBal = await token.balanceOf(transmuterContract.address);
         expect(alchemistTokenBalPost).equal(0);
-        expect(transmuterEndingTokenBal).gte(liqAmt.sub(THRESHOLD)).equal(true);
+        expect((transmuterEndingTokenBal).gte(liqAmt.sub(THRESHOLD))).equal(true);
       })
       it("liquidates the minimum necessary from the alchemist buffer", async () => {
         let dep2Amt = parseEther("500");
@@ -774,8 +773,8 @@ describe("Alchemist", () => {
         const alchemistTokenBalPost = await token.balanceOf(alchemist.address);
 
         const transmuterEndingTokenBal = await token.balanceOf(transmuterContract.address);
-        expect(alchemistTokenBalPost).gte(dep2Amt.sub(liqAmt).sub(THRESHOLD)).equal(true);
-        expect(transmuterEndingTokenBal).gte(liqAmt.sub(THRESHOLD)).equal(true);
+        expect(alchemistTokenBalPost).gte(dep2Amt.sub(liqAmt).sub(THRESHOLD));
+        expect(transmuterEndingTokenBal).gte(liqAmt.sub(THRESHOLD));
       })
       it("deposits, mints alUsd, repays, and has no outstanding debt", async () => {
         await alchemist.connect(minter).deposit(depositAmt.sub(parseEther("1000")));
@@ -817,10 +816,9 @@ describe("Alchemist", () => {
       let ceilingAmt = parseEther("1000");
 
       beforeEach(async () => {
-        adapter = (await YakStrategyAdapterFactory.connect(deployer).deploy(
-          vault.address,
-          alchemist.address
-        )) as YakStrategyAdapter;
+        adapter = (await VaultAdapterMockFactory.connect(deployer).deploy(
+          token.address
+        )) as VaultAdapterMock;
 
         await alchemist.connect(governance).initialize(adapter.address);
 
@@ -893,7 +891,7 @@ describe("Alchemist", () => {
             await alchemist.connect(minter).mint(parseEther("100000"));
             let balAfterWhale = await token.balanceOf(adapter.address);
             expect(balBeforeWhale).equal(0);
-            expect(balAfterWhale).gte(parseEther("200000").sub(THRESHOLD)).equal(true);
+            expect((balAfterWhale).gte(parseEther("200000").sub(THRESHOLD))).equal(true);
           });
 
           it("mint() does not flush funds if amount < flushActivator", async () => {
@@ -919,10 +917,13 @@ describe("Alchemist", () => {
       let yieldAmt = parseEther("100");
 
       beforeEach(async () => {
-        adapter = (await YakStrategyAdapterFactory.connect(deployer).deploy(
-          vault.address,
-          alchemist.address
-        )) as YakStrategyAdapter;
+        adapter = (await VaultAdapterMockFactory.connect(deployer).deploy(
+          token.address
+        )) as VaultAdapterMock;
+
+        let other_adapter = (await VaultAdapterMockFactory.connect(deployer).deploy(
+          token.address
+        )) as VaultAdapterMock;
 
         await alUsd.connect(deployer).setWhitelist(alchemist.address, true);
         await alchemist.connect(governance).initialize(adapter.address);
@@ -934,22 +935,23 @@ describe("Alchemist", () => {
         await alchemist.connect(user).mint(mintAmt);
         await transmuterContract.connect(user).stake(stakeAmt);
         await alchemist.flush();
+        await transmuterContract.connect(governance).initialize(other_adapter.address);
       });
 
       it("harvests yield from the vault", async () => {
         await mintToken(token, adapter.address, yieldAmt);
         await alchemist.harvest(0);
         let transmuterBal = await token.balanceOf(transmuterContract.address);
-        expect(transmuterBal).gte(yieldAmt.sub(yieldAmt.div(pctReso/harvestFee)).sub(THRESHOLD)).equal(true);
+        expect((transmuterBal).gte(yieldAmt.sub(yieldAmt.div(pctReso/harvestFee)).sub(THRESHOLD))).equal(true);
         let vaultBal = await token.balanceOf(adapter.address);
-        expect(vaultBal).gte(depositAmt.sub(THRESHOLD)).equal(true);
+        expect((vaultBal).gte(depositAmt.sub(THRESHOLD))).equal(true);
       })
 
       it("sends the harvest fee to the rewards address", async () => {
         await mintToken(token, adapter.address, yieldAmt);
         await alchemist.harvest(0);
         let rewardsBal = await token.balanceOf(await rewards.getAddress());
-        expect(rewardsBal).gte(yieldAmt.mul(100).div(harvestFee).sub(THRESHOLD)).equal(true);
+        expect((rewardsBal).gte(yieldAmt.mul(100).div(harvestFee).sub(THRESHOLD))).equal(true);
       })
 
       it("does not update any balances if there is nothing to harvest", async () => {
@@ -958,8 +960,8 @@ describe("Alchemist", () => {
         await alchemist.harvest(0);
         let endTransBal = await token.balanceOf(transmuterContract.address);
         let endRewardsBal = await token.balanceOf(await rewards.getAddress());
-        expect(initTransBal).gte(endTransBal.sub(THRESHOLD)).equal(true);
-        expect(initRewardsBal).gte(endRewardsBal.sub(THRESHOLD)).equal(true);
+        expect((initTransBal).gte(endTransBal.sub(THRESHOLD))).equal(true);
+        expect((initRewardsBal).gte(endRewardsBal.sub(THRESHOLD))).equal(true);
       })
     })
   });
